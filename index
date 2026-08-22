@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Plan de comidas</title>
+<meta name="theme-color" content="#B5623A">
+<link rel="manifest" href="./manifest.json">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Plan comidas">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Inter:wght@400;500;600;700&display=swap');
+
+  :root{
+    --cream:#FAF6F0;
+    --cream-2:#F1E9DC;
+    --olive:#2F3B2A;
+    --olive-soft:#5B7B5A;
+    --terracotta:#B5623A;
+    --terracotta-dark:#8F4C2C;
+    --gold:#E8C468;
+    --line:#E4D9C6;
+    --desayuno:#D9A441;
+    --comida:#B5623A;
+    --cena:#5B7B5A;
+    --radius:16px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color: transparent;}
+  html,body{margin:0; padding:0; background:var(--cream); color:var(--olive); font-family:'Inter',sans-serif; overscroll-behavior-y: contain;}
+  body{padding-bottom:90px;}
+
+  h1,h2,h3{font-family:'Fraunces',serif; margin:0; font-weight:700;}
+
+  header.top{
+    padding:22px 20px 16px;
+    background:var(--olive);
+    color:var(--cream);
+    border-bottom-left-radius:24px;
+    border-bottom-right-radius:24px;
+    position:sticky; top:0; z-index:20;
+  }
+  header.top h1{font-size:1.5rem; letter-spacing:.2px;}
+  header.top p{margin:4px 0 0; font-size:.82rem; opacity:.75; font-weight:500;}
+
+  nav.tabs{
+    display:flex; gap:6px; padding:12px 14px 0;
+    max-width:640px; margin:0 auto;
+  }
+  nav.tabs button{
+    flex:1; border:none; background:transparent; color:var(--cream);
+    opacity:.55; font-family:'Inter',sans-serif; font-weight:600; font-size:.82rem;
+    padding:8px 4px 12px; cursor:pointer; border-bottom:3px solid transparent;
+  }
+  nav.tabs button.active{opacity:1; border-bottom-color:var(--gold);}
+
+  main{max-width:640px; margin:0 auto; padding:18px 16px 30px;}
+  .view{display:none;}
+  .view.active{display:block;}
+
+  /* ---- Calendar view ---- */
+  .week-nav{display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;}
+  .week-nav button{
+    background:var(--cream-2); border:none; color:var(--olive); width:38px; height:38px;
+    border-radius:50%; font-size:1.1rem; cursor:pointer; display:flex; align-items:center; justify-content:center;
+  }
+  .week-nav .label{font-family:'Fraunces',serif; font-weight:700; font-size:1rem; text-align:center;}
+  .week-nav .today-btn{
+    width:auto; height:auto; padding:6px 12px; border-radius:20px; font-size:.72rem; font-weight:700;
+    font-family:'Inter',sans-serif; background:var(--terracotta); color:var(--cream);
+  }
+
+  .day-card{
+    background:#fff; border:1px solid var(--line); border-radius:var(--radius);
+    margin-bottom:12px; overflow:hidden;
+  }
+  .day-card.today{border-color:var(--terracotta); box-shadow:0 0 0 2px rgba(181,98,58,.15);}
+  .day-head{
+    display:flex; align-items:baseline; justify-content:space-between;
+    padding:10px 14px; background:var(--cream-2);
+  }
+  .day-head .dname{font-family:'Fraunces',serif; font-weight:700; font-size:1rem; text-transform:capitalize;}
+  .day-head .dnum{font-size:.75rem; opacity:.6; font-weight:600;}
+  .day-head .gym-tag{
+    font-size:.65rem; font-weight:700; background:var(--olive-soft); color:#fff;
+    padding:2px 8px; border-radius:10px; letter-spacing:.3px;
+  }
+  .slots{padding:8px 10px 10px;}
+  .slot{
+    display:flex; align-items:center; gap:10px; padding:9px 6px; border-radius:10px; cursor:pointer;
+  }
+  .slot:active{background:var(--cream-2);}
+  .slot .dot{width:9px; height:9px; border-radius:50%; flex-shrink:0;}
+  .slot.desayuno .dot{background:var(--desayuno);}
+  .slot.comida .dot{background:var(--comida);}
+  .slot.cena .dot{background:var(--cena);}
+  .slot .meal-label{font-size:.68rem; text-transform:uppercase; letter-spacing:.5px; opacity:.5; font-weight:700; width:62px; flex-shrink:0;}
+  .slot .meal-value{font-size:.87rem; font-weight:500; flex:1; line-height:1.25;}
+  .slot .meal-value.empty{opacity:.4; font-style:italic;}
+  .slot .edit-ico{opacity:.3; font-size:.85rem;}
+
+  /* ---- Catalog view ---- */
+  .cat-section{margin-bottom:22px;}
+  .cat-section h2{font-size:1.05rem; margin-bottom:2px; display:flex; align-items:center; gap:8px;}
+  .cat-section .cat-dot{width:10px; height:10px; border-radius:50%;}
+  .cat-desayuno .cat-dot{background:var(--desayuno);}
+  .cat-comida .cat-dot{background:var(--comida);}
+  .cat-cena .cat-dot{background:var(--cena);}
+  .cat-base .cat-dot{background:#9B8B73;}
+  .cat-section .sub{font-size:.75rem; opacity:.55; margin:0 0 10px;}
+  .item-list{display:flex; flex-direction:column; gap:6px;}
+  .item-row{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    background:#fff; border:1px solid var(--line); border-radius:12px; padding:10px 12px;
+  }
+  .item-row span{font-size:.87rem; line-height:1.3;}
+  .item-row button{
+    background:transparent; border:none; color:var(--terracotta); font-size:1rem; cursor:pointer; padding:2px 6px;
+  }
+  .add-row{display:flex; gap:8px; margin-top:8px;}
+  .add-row input{
+    flex:1; border:1px solid var(--line); border-radius:10px; padding:9px 12px; font-size:.85rem; font-family:'Inter',sans-serif;
+  }
+  .add-row button{
+    background:var(--olive-soft); color:#fff; border:none; border-radius:10px; padding:0 16px; font-weight:700; cursor:pointer; font-size:1rem;
+  }
+
+  /* ---- Modal ---- */
+  .overlay{
+    position:fixed; inset:0; background:rgba(47,59,42,.45); display:none;
+    align-items:flex-end; z-index:50;
+  }
+  .overlay.open{display:flex;}
+  .sheet{
+    background:var(--cream); width:100%; max-height:82vh; border-top-left-radius:22px; border-top-right-radius:22px;
+    padding:18px 18px 24px; overflow-y:auto; animation:up .18s ease-out;
+  }
+  @keyframes up{from{transform:translateY(30px); opacity:0;} to{transform:translateY(0); opacity:1;}}
+  .sheet-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;}
+  .sheet-head h3{font-size:1.05rem;}
+  .sheet-head button{background:none; border:none; font-size:1.3rem; color:var(--olive); opacity:.5; cursor:pointer;}
+  .sheet input.free-text{
+    width:100%; border:1px solid var(--line); border-radius:12px; padding:11px 14px; font-size:.9rem;
+    font-family:'Inter',sans-serif; margin-bottom:8px;
+  }
+  .save-toggle{display:flex; align-items:center; gap:8px; font-size:.78rem; opacity:.7; margin-bottom:14px;}
+  .sheet .confirm-btn{
+    width:100%; background:var(--terracotta); color:#fff; border:none; border-radius:12px; padding:12px; font-weight:700;
+    font-size:.9rem; cursor:pointer; margin-bottom:16px;
+  }
+  .sheet .clear-btn{
+    width:100%; background:transparent; color:var(--terracotta-dark); border:1px solid var(--line); border-radius:12px; padding:10px; font-weight:600;
+    font-size:.82rem; cursor:pointer; margin-bottom:16px;
+  }
+  .pick-group{margin-bottom:14px;}
+  .pick-group h4{font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; opacity:.5; margin:0 0 6px;}
+  .pick-item{
+    display:block; width:100%; text-align:left; background:#fff; border:1px solid var(--line); border-radius:10px;
+    padding:10px 12px; margin-bottom:6px; font-size:.86rem; cursor:pointer; font-family:'Inter',sans-serif; color:var(--olive);
+  }
+  .pick-item:active{background:var(--cream-2);}
+
+  /* ---- Bottom nav ---- */
+  .bottom-bar{
+    position:fixed; bottom:0; left:0; right:0; background:#fff; border-top:1px solid var(--line);
+    display:flex; padding:8px 10px calc(8px + env(safe-area-inset-bottom)); z-index:30;
+  }
+  .bottom-bar button{
+    flex:1; background:none; border:none; display:flex; flex-direction:column; align-items:center; gap:3px;
+    font-size:.68rem; font-weight:700; color:var(--olive); opacity:.45; cursor:pointer; font-family:'Inter',sans-serif;
+  }
+  .bottom-bar button.active{opacity:1; color:var(--terracotta);}
+  .bottom-bar .ico{font-size:1.15rem;}
+
+  .empty-hint{
+    text-align:center; padding:30px 16px; opacity:.5; font-size:.85rem;
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <h1 id="headerTitle">Plan de comidas</h1>
+  <p id="headerSub">Semana actual y siguiente</p>
+</header>
+
+<main>
+  <section id="view-calendar" class="view active"></section>
+
+  <section id="view-catalog" class="view">
+    <div id="catalogContent"></div>
+  </section>
+</main>
+
+<div class="bottom-bar">
+  <button id="navCal" class="active" onclick="switchView('calendar')">
+    <span class="ico">📅</span> Calendario
+  </button>
+  <button id="navCat" onclick="switchView('catalog')">
+    <span class="ico">📋</span> Listado
+  </button>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="sheet" id="sheet"></div>
+</div>
+
+<script>
+/* ---------------- Data ---------------- */
+const STORAGE_KEY = 'mealplan-data-v1';
+const DAY_NAMES = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
+const MEALS = [
+  {key:'desayuno', label:'Desayuno'},
+  {key:'comida', label:'Comida'},
+  {key:'cena', label:'Cena'}
+];
+
+const DEFAULT_DATA = {
+  catalog: {
+    desayuno: [
+      "Café con bebida de avena y canela",
+      "Yogur griego ligero con crema de cacahuetes y arándanos",
+      "2 huevos cocidos",
+      "Yogur griego ligero con cerezas"
+    ],
+    comida: [
+      "Solomillos de pollo a la plancha + judías verdes + tomate aliñado",
+      "Cinta de lomo a la plancha + pisto + hojas verdes",
+      "Lentejas estofadas (ración moderada) + huevo cocido",
+      "Salmorejo con taquitos de jamón serrano y huevo cocido",
+      "Ensalada de pimientos asados, melva, queso de cabra y AOVE",
+      "Hamburguesa (sin pan) + ensalada de hojas verdes, tomate y queso de cabra",
+      "Crema de verdura + solomillos de pollo o cinta de lomo",
+      "Tortilla o huevos revueltos + judías verdes"
+    ],
+    cena: [
+      "Crema de verdura + huevo (cocido, plancha o revuelto)",
+      "Ensalada de hojas verdes, tomate, queso de cabra y atún/melva",
+      "Pisto + huevo a la plancha",
+      "Salmorejo con taquitos de jamón serrano y huevo cocido",
+      "Judías verdes salteadas + solomillos de pollo"
+    ],
+    base: [
+      "Yogur griego ligero","Arándanos","Crema de cacahuetes","Huevos","Cerezas","Salmorejo",
+      "Cremas de verdura","Judías verdes","Lentejas","Cinta de lomo","Solomillos de pollo",
+      "Atún","Melva","Pimientos asados","Queso de cabra","Hojas verdes para ensalada",
+      "Tomate","Hamburguesa","Pisto","Jamón serrano","Lomo embutido"
+    ]
+  },
+  plan: {} // { 'YYYY-MM-DD': {desayuno:'', comida:'', cena:''} }
+};
+
+function loadData(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(!raw) { saveData(DEFAULT_DATA); return structuredClone(DEFAULT_DATA); }
+    const parsed = JSON.parse(raw);
+    // ensure structure integrity
+    parsed.catalog = parsed.catalog || structuredClone(DEFAULT_DATA.catalog);
+    parsed.plan = parsed.plan || {};
+    ['desayuno','comida','cena','base'].forEach(k=>{ if(!parsed.catalog[k]) parsed.catalog[k]=[]; });
+    return parsed;
+  }catch(e){
+    console.error('Error cargando datos', e);
+    return structuredClone(DEFAULT_DATA);
+  }
+}
+function saveData(data){
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
+  catch(e){ console.error('No se pudo guardar', e); alert('No se pudo guardar el cambio. Espacio de almacenamiento lleno o no disponible.'); }
+}
+
+let DATA = loadData();
+
+/* ---------------- Date helpers ---------------- */
+function fmtISO(d){
+  const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), day=String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
+function startOfWeek(d){
+  const date = new Date(d);
+  const day = date.getDay(); // 0 sun ... 6 sat
+  const diff = (day===0? -6 : 1) - day; // move to monday
+  date.setDate(date.getDate()+diff);
+  date.setHours(0,0,0,0);
+  return date;
+}
+function addDays(d,n){ const r=new Date(d); r.setDate(r.getDate()+n); return r; }
+
+let weekOffset = 0; // 0 = current week block (shows week 0 + week 1), shifts by weeks
+
+function getVisibleDays(){
+  const today = new Date();
+  const base = addDays(startOfWeek(today), weekOffset*7);
+  const days = [];
+  for(let i=0;i<14;i++) days.push(addDays(base,i));
+  return days;
+}
+
+/* ---------------- Rendering: Calendar ---------------- */
+function renderCalendar(){
+  const container = document.getElementById('view-calendar');
+  const days = getVisibleDays();
+  const todayISO = fmtISO(new Date());
+
+  const firstLabel = days[0].toLocaleDateString('es-ES',{day:'numeric',month:'short'});
+  const lastLabel = days[13].toLocaleDateString('es-ES',{day:'numeric',month:'short'});
+  document.getElementById('headerSub').textContent = weekOffset===0
+    ? 'Semana actual y siguiente'
+    : `${firstLabel} – ${lastLabel}`;
+
+  let html = `<div class="week-nav">
+    <button onclick="shiftWeeks(-1)">‹</button>
+    <div>
+      <div class="label">${firstLabel} — ${lastLabel}</div>
+    </div>
+    <button class="today-btn" onclick="goToday()">Hoy</button>
+    <button onclick="shiftWeeks(1)">›</button>
+  </div>`;
+
+  days.forEach(d=>{
+    const iso = fmtISO(d);
+    const isToday = iso===todayISO;
+    const dname = DAY_NAMES[d.getDay()];
+    const dnum = d.getDate();
+    const monthShort = d.toLocaleDateString('es-ES',{month:'short'});
+    const dayPlan = DATA.plan[iso] || {};
+
+    html += `<div class="day-card ${isToday?'today':''}">
+      <div class="day-head">
+        <span class="dname">${dname}</span>
+        <span class="dnum">${dnum} ${monthShort}</span>
+      </div>
+      <div class="slots">`;
+
+    MEALS.forEach(m=>{
+      const val = dayPlan[m.key];
+      html += `<div class="slot ${m.key}" onclick="openSlotEditor('${iso}','${m.key}')">
+        <span class="dot"></span>
+        <span class="meal-label">${m.label}</span>
+        <span class="meal-value ${val?'':'empty'}">${val ? escapeHtml(val) : 'Sin asignar'}</span>
+        <span class="edit-ico">✎</span>
+      </div>`;
+    });
+
+    html += `</div></div>`;
+  });
+
+  container.innerHTML = html;
+}
+
+function shiftWeeks(n){ weekOffset += n; renderCalendar(); }
+function goToday(){ weekOffset = 0; renderCalendar(); }
+
+/* ---------------- Slot editor (modal) ---------------- */
+let currentSlot = null; // {iso, mealKey}
+
+function openSlotEditor(iso, mealKey){
+  currentSlot = {iso, mealKey};
+  const mealMeta = MEALS.find(m=>m.key===mealKey);
+  const d = new Date(iso+'T00:00:00');
+  const dateLabel = d.toLocaleDateString('es-ES',{weekday:'long', day:'numeric', month:'long'});
+  const currentVal = (DATA.plan[iso] && DATA.plan[iso][mealKey]) || '';
+
+  const catalogItems = DATA.catalog[mealKey] || [];
+  const baseItems = DATA.catalog.base || [];
+
+  let html = `<div class="sheet-head">
+    <h3>${mealMeta.label} · ${capitalize(dateLabel)}</h3>
+    <button onclick="closeSheet()">✕</button>
+  </div>
+  <input type="text" class="free-text" id="freeTextInput" placeholder="Escribe un plato preparado o alimento de la despensa..." value="${escapeAttr(currentVal)}">
+  <label class="save-toggle"><input type="checkbox" id="saveToggle"> Guardar también en el listado de ${mealMeta.label.toLowerCase()}</label>
+  <button class="confirm-btn" onclick="confirmSlot()">Guardar</button>
+  ${currentVal ? `<button class="clear-btn" onclick="clearSlot()">Quitar comida de este día</button>` : ''}
+  <div class="pick-group">
+    <h4>${mealMeta.label}</h4>
+    ${catalogItems.map(it=>`<button class="pick-item" onclick="pickItem('${escapeAttr(it)}')">${escapeHtml(it)}</button>`).join('') || '<p class="empty-hint" style="padding:6px 0;">Aún no hay platos guardados aquí</p>'}
+  </div>
+  <div class="pick-group">
+    <h4>Ingredientes / alimentos base</h4>
+    ${baseItems.map(it=>`<button class="pick-item" onclick="pickItem('${escapeAttr(it)}')">${escapeHtml(it)}</button>`).join('')}
+  </div>`;
+
+  document.getElementById('sheet').innerHTML = html;
+  document.getElementById('overlay').classList.add('open');
+}
+
+function pickItem(text){
+  document.getElementById('freeTextInput').value = text;
+}
+
+function confirmSlot(){
+  const val = document.getElementById('freeTextInput').value.trim();
+  const save = document.getElementById('saveToggle').checked;
+  if(!val){ closeSheet(); return; }
+  const {iso, mealKey} = currentSlot;
+  if(!DATA.plan[iso]) DATA.plan[iso] = {};
+  DATA.plan[iso][mealKey] = val;
+
+  if(save && MEALS.some(m=>m.key===mealKey)){
+    if(!DATA.catalog[mealKey].includes(val)) DATA.catalog[mealKey].push(val);
+  }
+  saveData(DATA);
+  closeSheet();
+  renderCalendar();
+}
+
+function clearSlot(){
+  const {iso, mealKey} = currentSlot;
+  if(DATA.plan[iso]) delete DATA.plan[iso][mealKey];
+  saveData(DATA);
+  closeSheet();
+  renderCalendar();
+}
+
+function closeSheet(){
+  document.getElementById('overlay').classList.remove('open');
+  currentSlot = null;
+}
+
+/* ---------------- Catalog view ---------------- */
+const CAT_META = {
+  desayuno: {label:'Desayunos', cls:'cat-desayuno'},
+  comida: {label:'Comidas', cls:'cat-comida'},
+  cena: {label:'Cenas', cls:'cat-cena'},
+  base: {label:'Ingredientes base', cls:'cat-base'}
+};
+
+function renderCatalog(){
+  let html = '';
+  Object.keys(CAT_META).forEach(key=>{
+    const meta = CAT_META[key];
+    const items = DATA.catalog[key] || [];
+    html += `<div class="cat-section ${meta.cls}">
+      <h2><span class="cat-dot"></span>${meta.label}</h2>
+      <p class="sub">${key==='base' ? 'Alimentos sueltos, para combinar libremente' : 'Platos listos para asignar en el calendario'}</p>
+      <div class="item-list">
+        ${items.map((it,idx)=>`<div class="item-row"><span>${escapeHtml(it)}</span><button onclick="removeItem('${key}',${idx})">✕</button></div>`).join('') || '<p class="empty-hint" style="padding:10px 0;">Vacío</p>'}
+      </div>
+      <div class="add-row">
+        <input type="text" id="add-${key}" placeholder="Añadir nuevo...">
+        <button onclick="addItem('${key}')">+</button>
+      </div>
+    </div>`;
+  });
+  document.getElementById('catalogContent').innerHTML = html;
+}
+
+function addItem(key){
+  const input = document.getElementById('add-'+key);
+  const val = input.value.trim();
+  if(!val) return;
+  DATA.catalog[key].push(val);
+  saveData(DATA);
+  input.value='';
+  renderCatalog();
+}
+function removeItem(key, idx){
+  DATA.catalog[key].splice(idx,1);
+  saveData(DATA);
+  renderCatalog();
+}
+
+/* ---------------- Nav / utils ---------------- */
+function switchView(name){
+  document.getElementById('view-calendar').classList.toggle('active', name==='calendar');
+  document.getElementById('view-catalog').classList.toggle('active', name==='catalog');
+  document.getElementById('navCal').classList.toggle('active', name==='calendar');
+  document.getElementById('navCat').classList.toggle('active', name==='catalog');
+  document.getElementById('headerTitle').textContent = name==='calendar' ? 'Plan de comidas' : 'Listado de alimentos';
+  if(name==='calendar'){ document.getElementById('headerSub').textContent = weekOffset===0 ? 'Semana actual y siguiente' : document.getElementById('headerSub').textContent; }
+  else { document.getElementById('headerSub').textContent = 'Toca + para añadir platos o alimentos'; }
+}
+
+function capitalize(s){ return s.charAt(0).toUpperCase()+s.slice(1); }
+function escapeHtml(s){ return s.replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function escapeAttr(s){ return escapeHtml(s).replace(/`/g,'&#96;'); }
+
+document.getElementById('overlay').addEventListener('click', (e)=>{
+  if(e.target.id==='overlay') closeSheet();
+});
+
+/* ---------------- Init ---------------- */
+renderCalendar();
+renderCatalog();
+
+/* ---------------- Service worker ---------------- */
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('./sw.js').catch(err=>console.log('SW error', err));
+  });
+}
+</script>
+</body>
+</html>
