@@ -141,6 +141,20 @@
   .month-summary{margin-top:16px; background:#fff; border:1px solid var(--line); border-radius:14px; padding:14px 16px; font-size:.85rem; text-align:center; font-weight:600;}
   .month-summary span{color:var(--olive-soft); font-family:'Fraunces',serif; font-size:1.3rem; font-weight:700; display:block;}
 
+  /* recipes */
+  .rec-name{font-family:'Fraunces',serif; font-weight:700; font-size:1.05rem;}
+  .rec-meta{font-size:.76rem; opacity:.65; margin:4px 0 8px; line-height:1.4;}
+  .calc-out{background:var(--cream); border-radius:10px; padding:9px 12px; font-size:.88rem; margin-bottom:6px;}
+  .rf-row{display:grid; grid-template-columns:1fr 84px 34px; gap:6px; margin-bottom:6px;}
+  .rf-row select,.rf-row input{border:1px solid var(--line); border-radius:10px; padding:9px 8px; font-size:.85rem; font-family:'Inter',sans-serif; background:#fff; color:var(--olive); min-width:0; width:100%;}
+  .rf-row button{border:none; background:var(--cream-2); border-radius:10px; color:var(--terracotta); cursor:pointer;}
+  .rf-prev{background:var(--cream-2); border-radius:12px; padding:10px 12px; font-size:.82rem; line-height:1.55; margin:10px 0;}
+  .pool-chip{border:1px solid var(--line); background:#fff; color:var(--olive); border-radius:20px; padding:7px 12px; font-size:.78rem; font-weight:600; cursor:pointer; font-family:'Inter',sans-serif;}
+  .pool-chip.on{background:var(--terracotta); border-color:var(--terracotta); color:#fff;}
+  .ing-row{display:flex; justify-content:space-between; align-items:center; padding:7px 0; border-bottom:1px dashed var(--line); font-size:.84rem; gap:8px;}
+  .ing-row:last-child{border-bottom:none;}
+  .ing-row button{background:none; border:none; color:var(--terracotta); font-size:1rem; cursor:pointer;}
+
   /* sheet */
   .overlay{position:fixed; inset:0; background:rgba(47,59,42,.45); display:none; align-items:flex-end; z-index:50;}
   .overlay.open{display:flex;}
@@ -170,12 +184,14 @@
 
 <main>
   <section id="view-menu" class="view active"></section>
+  <section id="view-recipes" class="view"></section>
   <section id="view-profile" class="view"></section>
   <section id="view-month" class="view"></section>
 </main>
 
 <div class="bottom-bar">
   <button id="nav-menu" class="active" onclick="switchView('menu')"><span class="ico">🍽️</span>Menú</button>
+  <button id="nav-recipes" onclick="switchView('recipes')"><span class="ico">🥘</span>Recetas</button>
   <button id="nav-profile" onclick="switchView('profile')"><span class="ico">🎯</span>Objetivo</button>
   <button id="nav-month" onclick="switchView('month')"><span class="ico">🗓️</span>Seguimiento</button>
 </div>
@@ -303,7 +319,9 @@ function defaultData(){
     profile:{sex:'f', age:'', height:'', weight:'', goalKg:'', weeks:'', startDate:todayISO(),
              mode:'low', typicalSteps:7000, boxMin:50, boxDays:[]},
     days:{},   // iso -> {steps, box, boxMin, done}
-    menus:{}   // iso -> {desayuno:'d1', ...}
+    menus:{},  // iso -> {desayuno:'d1', ...}
+    customFoods:{}, // ingredientes propios
+    myRecipes:[]    // recetas propias
   };
 }
 function loadData(){
@@ -313,6 +331,7 @@ function loadData(){
     const d = JSON.parse(raw), def = defaultData();
     d.profile = Object.assign(def.profile, d.profile||{});
     d.days = d.days||{}; d.menus = d.menus||{};
+    d.customFoods = d.customFoods||{}; d.myRecipes = d.myRecipes||[];
     return d;
   }catch(e){ return defaultData(); }
 }
@@ -321,6 +340,7 @@ function saveData(){
   catch(e){ toast('No se pudo guardar en este navegador'); }
 }
 let DATA = loadData();
+registerCustom();
 
 /* =========================================================
    FECHAS / UTILIDADES
@@ -470,7 +490,7 @@ function picker(pool){
   return ()=>{ if(!q.length) q=shuffle(RECIPES[pool].map(r=>r.id)); return q.pop(); };
 }
 function randomMenu(){
-  const pick = pool => RECIPES[pool][Math.floor(Math.random()*RECIPES[pool].length)].id;
+  const pick = pool => { const l = RECIPES[pool].filter(r=>r.auto!==false); return l[Math.floor(Math.random()*l.length)].id; };
   const a = pick('snack'); let b = pick('snack'), t = 0;
   while(b===a && t<10){ b = pick('snack'); t++; }
   return {desayuno:pick('desayuno'), almuerzo:a, comida:pick('comida'), merienda:b, cena:pick('cena')};
@@ -617,8 +637,8 @@ function swapTo(iso,slotKey,id){
   if(!DATA.menus[iso]) DATA.menus[iso]={};
   DATA.menus[iso][slotKey]=id; saveData(); closeSheet(); rerender(renderMenu);
 }
-function closeSheet(){ document.getElementById('overlay').classList.remove('open'); }
-document.getElementById('overlay').addEventListener('click',e=>{ if(e.target.id==='overlay') closeSheet(); });
+function closeSheet(){ formOpen=false; document.getElementById('overlay').classList.remove('open'); }
+document.getElementById('overlay').addEventListener('click',e=>{ if(e.target.id==='overlay' && !formOpen) closeSheet(); });
 
 /* =========================================================
    VISTA: OBJETIVO (perfil)
@@ -744,20 +764,289 @@ function shiftMonth(n){ monthCursor=new Date(monthCursor.getFullYear(), monthCur
 function toggleDone(iso){ const d=ensureDay(iso); d.done=!d.done; saveData(); renderMonth(); }
 
 /* =========================================================
+   RECETAS PROPIAS: ingredientes con gramos -> kcal y macros por ración
+   ========================================================= */
+const POOLS = [
+  {key:'desayuno', label:'Desayuno'},
+  {key:'snack',    label:'Almuerzo / merienda'},
+  {key:'comida',   label:'Comida'},
+  {key:'cena',     label:'Cena'}
+];
+let formOpen = false;
+let draft = null;
+
+function norm(s){ return String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,''); }
+
+function recipeTotals(r){
+  let k=0,p=0,c=0,f=0,sum=0;
+  (r.ingredients||[]).forEach(i=>{
+    const fd=FOODS[i.f]; if(!fd || fd.dish) return;
+    const g=Number(i.g)||0, q=g/100;
+    k+=fd.k*q; p+=fd.p*q; c+=fd.c*q; f+=fd.f*q; sum+=g;
+  });
+  const w = Number(r.totalG)>0 ? Number(r.totalG) : sum;
+  return {k,p,c,f,w,sum};
+}
+
+/* Registra ingredientes y recetas propias para que el menú las pueda usar */
+function registerCustom(){
+  Object.keys(FOODS).forEach(k=>{ if(FOODS[k].custom) delete FOODS[k]; });
+  Object.keys(RECIPES).forEach(p=>{ RECIPES[p] = RECIPES[p].filter(r=>!r.custom); });
+  Object.keys(DATA.customFoods).forEach(k=>{
+    const c=DATA.customFoods[k];
+    FOODS[k] = {n:c.n, k:c.k, p:c.p, c:c.c, f:c.f, custom:true, ing:true};
+  });
+  DATA.myRecipes.forEach(r=>{
+    const t=recipeTotals(r);
+    if(!(t.w>0)) return;
+    const key='u_'+r.id;
+    FOODS[key] = {n:r.name, k:t.k*100/t.w, p:t.p*100/t.w, c:t.c*100/t.w, f:t.f*100/t.w, custom:true, dish:true};
+    (r.pools||[]).forEach(pool=>{
+      if(RECIPES[pool]) RECIPES[pool].push({id:key, name:r.name, custom:true, auto:r.auto!==false,
+        items:[{f:key, g:Number(r.portionG)||250, s:1}]});
+    });
+  });
+}
+
+/* ---- Importar ingredientes pegando texto ---- */
+const ALIASES = [
+  [/lenteja/,'lentejas'],
+  [/huevo/,'huevo'],
+  [/lomo.*(embut|embuch)|(embut|embuch).*lomo/,'lomoemb'],
+  [/solomillo|pollo|pechuga/,'pollo'],
+  [/lomo|cinta/,'lomo'],
+  [/jamon/,'jamon'],
+  [/atun/,'atun'],
+  [/melva/,'melva'],
+  [/yogur/,'yogur'],
+  [/arandan/,'arandanos'],
+  [/cereza/,'cerezas'],
+  [/cacahuete/,'cacahuete'],
+  [/judia/,'judias'],
+  [/pimiento/,'pimientos'],
+  [/queso.*cabra|cabra/,'cabra'],
+  [/hamburguesa|ternera|carne picada/,'hamburguesa'],
+  [/pisto/,'pisto'],
+  [/salmorejo/,'salmorejo'],
+  [/crema/,'crema'],
+  [/tomate/,'tomate'],
+  [/lechuga|espinaca|canonigo|rucula|hojas/,'hojas'],
+  [/aceite|aove/,'aove'],
+  [/arroz/,'arroz'],
+  [/pasta|espagueti|macarron|fideo|tallarin/,'pasta'],
+  [/\bpan\b/,'pan'],
+  [/avena/,'avena']
+];
+const DEFAULT_UNIT_G = {tomate:120, pimientos:80, yogur:125, hamburguesa:120};
+const SPOON_G = {aove:10, cacahuete:15};
+
+function matchFood(text){
+  const t=norm(text).trim();
+  if(!t) return null;
+  for(const [re,key] of ALIASES){ if(re.test(t) && FOODS[key]) return key; }
+  for(const k of Object.keys(FOODS)){
+    if(!FOODS[k].ing) continue;
+    const n=norm(FOODS[k].n);
+    if(t.includes(n) || n.includes(t)) return k;
+  }
+  return null;
+}
+function parseIngredients(text){
+  const rows=[], unknown=[];
+  const re=/^(\d+(?:[.,]\d+)?)\s*(?:(kg|gramos?|gr|g|ml|litros?|l|uds?|unidades?|cucharaditas?|cucharadas?|cdas?|cdtas?)(?![a-z]))?\.?\s*(?:de\s+)?(.+)$/i;
+  text.split(/\n|;/).map(s=>s.trim().replace(/^[-•*]\s*/,'')).filter(Boolean).forEach(line=>{
+    const m=line.match(re);
+    if(!m){ unknown.push(line); return; }
+    const qty=parseFloat(m[1].replace(',','.')), unit=(m[2]||'').toLowerCase(), name=m[3];
+    const key=matchFood(name);
+    if(!key){ unknown.push(line); return; }
+    const fd=FOODS[key], uw=fd.u || DEFAULT_UNIT_G[key];
+    let g=NaN;
+    if(/^(kg)$/.test(unit)) g=qty*1000;
+    else if(/^(g|gr|gramos?|ml)$/.test(unit)) g=qty;
+    else if(/^(l|litros?)$/.test(unit)) g=qty*1000;
+    else if(/^(uds?|unidades?)$/.test(unit)) g=uw ? qty*uw : NaN;
+    else if(/^(cucharadas?|cdas?)$/.test(unit)) g=qty*(SPOON_G[key]||15);
+    else if(/^(cucharaditas?|cdtas?)$/.test(unit)) g=qty*((SPOON_G[key]||15)/3);
+    else g = (qty<=12 && uw) ? qty*uw : qty;       // sin unidad: "2 huevos" o "200 lentejas"
+    if(!(g>0)){ unknown.push(line+' (indica los gramos)'); return; }
+    rows.push({f:key, g:Math.round(g)});
+  });
+  return {rows, unknown};
+}
+
+/* ---- Formulario ---- */
+function newDraft(){
+  return {id:null, name:'', rows:[{f:'',g:''}], totalG:'', portionG:250,
+    pools:{desayuno:false,snack:false,comida:true,cena:false}, auto:true, showNew:false, pasteMsg:''};
+}
+function openRecipeForm(id){
+  if(id){
+    const r=DATA.myRecipes.find(x=>x.id===id); if(!r) return;
+    draft={id:r.id, name:r.name, rows:r.ingredients.map(i=>({f:i.f,g:i.g})), totalG:r.totalG||'', portionG:r.portionG||250,
+      pools:{desayuno:false,snack:false,comida:false,cena:false}, auto:r.auto!==false, showNew:false, pasteMsg:''};
+    (r.pools||[]).forEach(p=>{ draft.pools[p]=true; });
+  } else draft=newDraft();
+  formOpen=true;
+  renderRecipeForm();
+  document.getElementById('overlay').classList.add('open');
+}
+function foodOptions(sel){
+  const base=Object.keys(FOODS).filter(k=>!FOODS[k].custom && !FOODS[k].dish);
+  const mine=Object.keys(FOODS).filter(k=>FOODS[k].ing);
+  const opt=k=>`<option value="${k}" ${k===sel?'selected':''}>${esc(FOODS[k].n)}</option>`;
+  return `<option value="">Elegir ingrediente…</option><optgroup label="Alimentos de tu lista">${base.map(opt).join('')}</optgroup>${mine.length?`<optgroup label="Mis ingredientes">${mine.map(opt).join('')}</optgroup>`:''}`;
+}
+function renderRecipeForm(){
+  const sheet=document.getElementById('sheet'), sc=sheet.scrollTop, d=draft;
+  sheet.innerHTML = `<div class="sheet-head"><h3>${d.id?'Editar receta':'Nueva receta'}</h3><button onclick="closeSheet()">✕</button></div>
+  <div class="field"><label>Nombre</label><input type="text" value="${esc(d.name)}" placeholder="Ej. Lentejas estofadas" oninput="draft.name=this.value"></div>
+  <details class="help" style="margin-bottom:12px;"><summary>📋 Pegar lista de ingredientes</summary>
+    <textarea id="rf-paste" rows="4" style="width:100%; margin-top:8px; border:1px solid var(--line); border-radius:10px; padding:10px; font-family:'Inter',sans-serif; font-size:.85rem;" placeholder="200 g lentejas&#10;2 huevos&#10;150 g solomillo de pollo&#10;1 cucharada de aceite"></textarea>
+    <button class="btn" style="margin-top:6px; width:100%;" onclick="importPaste()">Importar ingredientes</button>
+    ${d.pasteMsg?`<p class="hint">${esc(d.pasteMsg)}</p>`:''}
+  </details>
+  <div class="field" style="margin-bottom:6px;"><label>Ingredientes (gramos o ml, en crudo)</label></div>
+  ${d.rows.map((r,i)=>`<div class="rf-row"><select onchange="rowFood(${i},this.value)">${foodOptions(r.f)}</select><input type="number" inputmode="decimal" placeholder="g" value="${r.g}" oninput="rowG(${i},this.value)"><button onclick="delRow(${i})">✕</button></div>`).join('')}
+  <div class="tools" style="margin:8px 0 12px;"><button class="btn" onclick="addRow()">＋ Ingrediente</button><button class="btn" onclick="toggleNewIng()">＋ Ingrediente nuevo</button></div>
+  ${d.showNew?`<div class="rf-prev">
+    <div class="field"><label>Nombre del ingrediente</label><input id="ni-name" type="text"></div>
+    <div class="grid2">
+      <div class="field"><label>kcal / 100 g</label><input id="ni-k" type="number" inputmode="decimal"></div>
+      <div class="field"><label>Proteína (g)</label><input id="ni-p" type="number" inputmode="decimal"></div>
+      <div class="field"><label>Hidratos (g)</label><input id="ni-c" type="number" inputmode="decimal"></div>
+      <div class="field"><label>Grasa (g)</label><input id="ni-f" type="number" inputmode="decimal"></div>
+    </div>
+    <button class="btn primary" style="width:100%;" onclick="saveNewIng()">Guardar ingrediente</button>
+    <p class="hint">Valores por 100 g, los de la etiqueta. Proteína, hidratos y grasa son opcionales.</p></div>`:''}
+  <div class="grid2">
+    <div class="field"><label>Peso total cocinado (g)</label><input type="number" inputmode="decimal" value="${d.totalG}" placeholder="opcional" oninput="rfTotal(this.value)"></div>
+    <div class="field"><label>Peso de tu ración (g)</label><input type="number" inputmode="decimal" value="${d.portionG}" oninput="rfPortion(this.value)"></div>
+  </div>
+  <div class="rf-prev" id="rf-prev"></div>
+  <div class="field"><label>Usar en el menú como</label><div class="chips">${POOLS.map(p=>`<button type="button" class="pool-chip ${d.pools[p.key]?'on':''}" onclick="rfPool('${p.key}',this)">${p.label}</button>`).join('')}</div></div>
+  <label class="check-line"><input type="checkbox" ${d.auto?'checked':''} onchange="draft.auto=this.checked"> Incluirla en los menús automáticos</label>
+  <p class="hint" style="margin-bottom:12px;">Si no la marcas, solo aparecerá cuando cambies un plato a mano. Si no eliges ninguna comida, queda solo como calculadora.</p>
+  <button class="btn primary" style="width:100%;" onclick="saveRecipe()">Guardar receta</button>`;
+  sheet.scrollTop=sc;
+  updatePreview();
+}
+function updatePreview(){
+  const el=document.getElementById('rf-prev'); if(!el||!draft) return;
+  const rows=draft.rows.filter(r=>r.f && Number(r.g)>0).map(r=>({f:r.f,g:Number(r.g)}));
+  if(!rows.length){ el.innerHTML='Añade ingredientes con sus gramos para ver las calorías.'; return; }
+  const t=recipeTotals({ingredients:rows, totalG:draft.totalG});
+  const per=100/t.w, pg=Number(draft.portionG)||0, q=pg/t.w;
+  el.innerHTML = `<b>Plato completo</b> (${Math.round(t.w)} g): ${Math.round(t.k)} kcal · P ${Math.round(t.p)} · C ${Math.round(t.c)} · G ${Math.round(t.f)}<br>
+    <b>Cada 100 g:</b> ${Math.round(t.k*per)} kcal<br>
+    <b>Tu ración de ${pg} g:</b> <span style="color:var(--terracotta); font-weight:700;">${Math.round(t.k*q)} kcal</span> · P ${Math.round(t.p*q)} · C ${Math.round(t.c*q)} · G ${Math.round(t.f*q)}
+    ${Number(draft.totalG)>0 ? '' : '<br><span style="opacity:.6">Sin peso cocinado uso la suma de ingredientes en crudo. Si el plato pierde o gana agua al cocinarse, pésalo ya hecho y ponlo arriba para que la ración sea exacta.</span>'}`;
+}
+function rowFood(i,v){ draft.rows[i].f=v; updatePreview(); }
+function rowG(i,v){ draft.rows[i].g=v; updatePreview(); }
+function addRow(){ draft.rows.push({f:'',g:''}); renderRecipeForm(); }
+function delRow(i){ draft.rows.splice(i,1); if(!draft.rows.length) draft.rows.push({f:'',g:''}); renderRecipeForm(); }
+function rfTotal(v){ draft.totalG=v; updatePreview(); }
+function rfPortion(v){ draft.portionG=v; updatePreview(); }
+function rfPool(k,btn){ draft.pools[k]=!draft.pools[k]; btn.classList.toggle('on', draft.pools[k]); }
+function toggleNewIng(){ draft.showNew=!draft.showNew; renderRecipeForm(); }
+function saveNewIng(){
+  const val=id=>document.getElementById(id).value;
+  const n=val('ni-name').trim();
+  if(!n || val('ni-k')==='' || !(Number(val('ni-k'))>=0)){ toast('Pon el nombre y las kcal por 100 g'); return; }
+  const key='x_'+Date.now().toString(36);
+  DATA.customFoods[key]={n, k:Number(val('ni-k')), p:Number(val('ni-p'))||0, c:Number(val('ni-c'))||0, f:Number(val('ni-f'))||0};
+  saveData(); registerCustom();
+  const empty=draft.rows.find(r=>!r.f);
+  if(empty) empty.f=key; else draft.rows.push({f:key,g:''});
+  draft.showNew=false; renderRecipeForm(); toast('Ingrediente guardado');
+}
+function importPaste(){
+  const res=parseIngredients(document.getElementById('rf-paste').value||'');
+  if(res.rows.length){
+    if(draft.rows.length===1 && !draft.rows[0].f && !draft.rows[0].g) draft.rows=[];
+    res.rows.forEach(r=>draft.rows.push(r));
+  }
+  draft.pasteMsg = res.rows.length ? `Añadidos ${res.rows.length} ingredientes.` : 'No he reconocido ningún ingrediente.';
+  if(res.unknown.length) draft.pasteMsg += ` No reconozco: ${res.unknown.join('; ')}. Créalos con “+ Ingrediente nuevo”.`;
+  renderRecipeForm();
+}
+function saveRecipe(){
+  const name=draft.name.trim();
+  const ings=draft.rows.filter(r=>r.f && Number(r.g)>0).map(r=>({f:r.f, g:Number(r.g)}));
+  const pools=POOLS.map(p=>p.key).filter(k=>draft.pools[k]);
+  if(!name){ toast('Ponle un nombre a la receta'); return; }
+  if(!ings.length){ toast('Añade al menos un ingrediente con sus gramos'); return; }
+  if(!(Number(draft.portionG)>0)){ toast('Indica el peso de una ración'); return; }
+  const rec={id:draft.id||Date.now().toString(36), name, ingredients:ings,
+    totalG:Number(draft.totalG)>0?Number(draft.totalG):0, portionG:Number(draft.portionG), pools, auto:!!draft.auto};
+  const i=DATA.myRecipes.findIndex(x=>x.id===rec.id);
+  if(i>=0) DATA.myRecipes[i]=rec; else DATA.myRecipes.push(rec);
+  saveData(); registerCustom(); closeSheet(); renderRecipes(); toast('Receta guardada');
+}
+function deleteRecipe(id){
+  const r=DATA.myRecipes.find(x=>x.id===id); if(!r) return;
+  if(!confirm('¿Borrar la receta “'+r.name+'”?')) return;
+  DATA.myRecipes=DATA.myRecipes.filter(x=>x.id!==id);
+  saveData(); registerCustom(); renderRecipes();
+}
+function deleteIngredient(key){
+  if(DATA.myRecipes.some(r=>r.ingredients.some(i=>i.f===key))){ toast('Está en una receta: edítala o bórrala primero'); return; }
+  delete DATA.customFoods[key]; saveData(); registerCustom(); renderRecipes();
+}
+
+/* ---- Lista de recetas con calculadora de ración ---- */
+function renderRecipes(){
+  const el=document.getElementById('view-recipes');
+  let html=`<div class="tools"><button class="btn primary" onclick="openRecipeForm()">＋ Nueva receta</button></div>`;
+  const list=DATA.myRecipes.filter(r=>recipeTotals(r).w>0);
+  if(!list.length){
+    html+=`<div class="card"><h2>Calcula tus recetas</h2><p class="hint" style="font-size:.86rem; opacity:.75;">Escribe o pega los ingredientes con sus gramos, indica cuánto pesa tu ración y la app te dice las kcal y los macros. Si quieres, queda también disponible en tu menú semanal.</p></div>`;
+  }
+  list.forEach(r=>{
+    const t=recipeTotals(r), per=100/t.w;
+    const where=(r.pools||[]).map(p=>POOLS.find(x=>x.key===p).label.toLowerCase()).join(', ');
+    html+=`<div class="card"><div class="rec-name">${esc(r.name)}</div>
+      <div class="rec-meta">${Math.round(t.k*per)} kcal / 100 g · P ${(t.p*per).toFixed(1)} · C ${(t.c*per).toFixed(1)} · G ${(t.f*per).toFixed(1)}</div>
+      <div class="field"><label>Peso de tu ración (g)</label><input type="number" inputmode="decimal" value="${r.portionG}" oninput="calcPortion('${r.id}',this.value)"></div>
+      <div class="calc-out" id="co-${r.id}"></div>
+      <div class="rec-meta">${where ? 'En el menú como: '+esc(where)+(r.auto!==false?'':' (solo a mano)') : 'Solo calculadora, no entra en el menú'}</div>
+      <div class="tools" style="margin:8px 0 0;"><button class="btn" onclick="openRecipeForm('${r.id}')">Editar</button><button class="btn" onclick="deleteRecipe('${r.id}')">Borrar</button></div></div>`;
+  });
+  const mine=Object.keys(DATA.customFoods);
+  if(mine.length){
+    html+=`<div class="card"><h2>Mis ingredientes</h2>${mine.map(k=>{ const c=DATA.customFoods[k];
+      return `<div class="ing-row"><span>${esc(c.n)} <span style="opacity:.55">· ${Math.round(c.k)} kcal/100 g</span></span><button onclick="deleteIngredient('${k}')">✕</button></div>`; }).join('')}</div>`;
+  }
+  el.innerHTML=html;
+  list.forEach(r=>calcPortion(r.id, r.portionG));
+}
+function calcPortion(id,v){
+  const r=DATA.myRecipes.find(x=>x.id===id), out=document.getElementById('co-'+id);
+  if(!r||!out) return;
+  const g=Number(v);
+  if(!(g>0)){ out.innerHTML=''; return; }
+  const t=recipeTotals(r); if(!(t.w>0)) return;
+  const q=g/t.w;
+  out.innerHTML=`<b>${Math.round(t.k*q)} kcal</b> · P ${Math.round(t.p*q)} g · C ${Math.round(t.c*q)} g · G ${Math.round(t.f*q)} g`;
+}
+
+/* =========================================================
    NAVEGACIÓN
    ========================================================= */
 function switchView(name){
-  ['menu','profile','month'].forEach(v=>{
+  ['menu','recipes','profile','month'].forEach(v=>{
     document.getElementById('view-'+v).classList.toggle('active', v===name);
     document.getElementById('nav-'+v).classList.toggle('active', v===name);
   });
-  const t={menu:'Menú semanal', profile:'Tu objetivo', month:'Seguimiento'};
-  const s={menu:'5 comidas al día con cantidades ajustadas', profile:'Calorías y macros según tus datos', month:'Verde = día cumplido'};
+  const t={menu:'Menú semanal', recipes:'Mis recetas', profile:'Tu objetivo', month:'Seguimiento'};
+  const s={menu:'5 comidas al día con cantidades ajustadas', recipes:'Calcula las kcal de tu ración', profile:'Calorías y macros según tus datos', month:'Verde = día cumplido'};
   document.getElementById('headerTitle').textContent=t[name];
   document.getElementById('headerSub').textContent=s[name];
   if(name==='menu') renderMenu();
   if(name==='profile') renderProfile();
   if(name==='month') renderMonth();
+  if(name==='recipes') renderRecipes();
   window.scrollTo(0,0);
 }
 
