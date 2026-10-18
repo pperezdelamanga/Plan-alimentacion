@@ -141,6 +141,18 @@
   .month-summary{margin-top:16px; background:#fff; border:1px solid var(--line); border-radius:14px; padding:14px 16px; font-size:.85rem; text-align:center; font-weight:600;}
   .month-summary span{color:var(--olive-soft); font-family:'Fraunces',serif; font-size:1.3rem; font-weight:700; display:block;}
 
+  /* seg + charts */
+  .seg{display:flex; gap:6px;}
+  .seg button{flex:1; border:1px solid var(--line); background:#fff; color:var(--olive); border-radius:10px; padding:9px 4px; font-size:.78rem; font-weight:700; cursor:pointer; font-family:'Inter',sans-serif;}
+  .seg button.on{background:var(--terracotta); border-color:var(--terracotta); color:#fff;}
+  .chart-wrap{position:relative;}
+  .chart-wrap svg{width:100%; height:auto; display:block; touch-action:pan-y; overflow:visible;}
+  .chart-wrap .gl{stroke:var(--line); stroke-width:1;}
+  .chart-wrap .ax{fill:#666B5F; font-size:10px; font-family:'Inter',sans-serif;}
+  .chart-wrap .lv{fill:var(--olive); font-size:11px; font-weight:700; font-family:'Inter',sans-serif;}
+  .chart-wrap .cx{stroke:#9B8B73; stroke-width:1; stroke-dasharray:3 3;}
+  .chart-wrap .tip{position:absolute; pointer-events:none; background:var(--olive); color:#fff; padding:5px 9px; border-radius:8px; font-size:.74rem; font-weight:600; display:none; white-space:nowrap; transform:translate(-50%,-135%);}
+
   /* recipes */
   .rec-name{font-family:'Fraunces',serif; font-weight:700; font-size:1.05rem;}
   .rec-meta{font-size:.76rem; opacity:.65; margin:4px 0 8px; line-height:1.4;}
@@ -187,13 +199,15 @@
   <section id="view-recipes" class="view"></section>
   <section id="view-profile" class="view"></section>
   <section id="view-month" class="view"></section>
+  <section id="view-progress" class="view"></section>
 </main>
 
 <div class="bottom-bar">
   <button id="nav-menu" class="active" onclick="switchView('menu')"><span class="ico">🍽️</span>Menú</button>
   <button id="nav-recipes" onclick="switchView('recipes')"><span class="ico">🥘</span>Recetas</button>
   <button id="nav-profile" onclick="switchView('profile')"><span class="ico">🎯</span>Objetivo</button>
-  <button id="nav-month" onclick="switchView('month')"><span class="ico">🗓️</span>Seguimiento</button>
+  <button id="nav-month" onclick="switchView('month')"><span class="ico">🗓️</span>Calendario</button>
+  <button id="nav-progress" onclick="switchView('progress')"><span class="ico">📈</span>Progreso</button>
 </div>
 
 <div class="overlay" id="overlay"><div class="sheet" id="sheet"></div></div>
@@ -317,11 +331,12 @@ function todayISO(){ return fmtISO(new Date()); }
 function defaultData(){
   return {
     profile:{sex:'f', age:'', height:'', weight:'', goalKg:'', weeks:'', startDate:todayISO(),
-             mode:'low', typicalSteps:7000, boxMin:50, boxDays:[]},
+             mode:'low', typicalSteps:7000, boxMin:50, boxPerWeek:3},
     days:{},   // iso -> {steps, box, boxMin, done}
     menus:{},  // iso -> {desayuno:'d1', ...}
     customFoods:{}, // ingredientes propios
-    myRecipes:[]    // recetas propias
+    myRecipes:[],   // recetas propias
+    measures:[]     // [{date, w, c}] peso (kg) y cintura (cm)
   };
 }
 function loadData(){
@@ -329,9 +344,12 @@ function loadData(){
     const raw = localStorage.getItem(STORAGE_KEY);
     if(!raw) return defaultData();
     const d = JSON.parse(raw), def = defaultData();
-    d.profile = Object.assign(def.profile, d.profile||{});
+    const oldP = d.profile||{};
+    if(oldP.boxPerWeek===undefined && Array.isArray(oldP.boxDays)) oldP.boxPerWeek = oldP.boxDays.length || 3;   // migración: días fijos -> media semanal
+    delete oldP.boxDays;
+    d.profile = Object.assign(def.profile, oldP);
     d.days = d.days||{}; d.menus = d.menus||{};
-    d.customFoods = d.customFoods||{}; d.myRecipes = d.myRecipes||[];
+    d.customFoods = d.customFoods||{}; d.myRecipes = d.myRecipes||[]; d.measures = d.measures||[];
     return d;
   }catch(e){ return defaultData(); }
 }
@@ -373,22 +391,22 @@ function profileOk(){ return profileIssues().length===0; }
 
 function bmr(){
   const p=DATA.profile;
-  return 10*N(p.weight) + 6.25*N(p.height) - 5*N(p.age) + (p.sex==='m' ? 5 : -161);
+  return 10*W() + 6.25*N(p.height) - 5*N(p.age) + (p.sex==='m' ? 5 : -161);
 }
 function stepsKcal(steps){
   const p=DATA.profile;
   const net = Math.max(0, steps - BASE_STEPS);
   const stride = N(p.height)*0.415/100;           // m por paso
   const km = net*stride/1000;
-  return 0.5*N(p.weight)*km;                       // ~0,5 kcal por kg y km caminado
+  return 0.5*W()*km;                       // ~0,5 kcal por kg y km caminado
 }
 function boxKcal(min){
-  return 6.5*N(DATA.profile.weight)*(min/60);      // (MET 7,5 - 1 en reposo) x kg x horas
+  return 6.5*W()*(min/60);      // (MET 7,5 - 1 en reposo) x kg x horas
 }
 function planParams(){
   const p=DATA.profile;
   const avgSteps = Number(p.typicalSteps)||0;
-  const boxPerWeek = p.boxDays.length;
+  const boxPerWeek = Number(p.boxPerWeek)||0;
   const avgTdee = bmr()*BASE_FACTOR + stepsKcal(avgSteps) + (boxPerWeek/7)*boxKcal(Number(p.boxMin)||0);
   const required = N(p.goalKg)*7700/(N(p.weeks)*7);
   const cap = 0.25*avgTdee;
@@ -399,7 +417,7 @@ function planParams(){
   return {avgTdee, required, deficit, limited, realKg, weeksNeeded, floor:(p.sex==='m'?1500:1200)};
 }
 function macrosFor(kcal){
-  const p=DATA.profile, w=N(p.weight);
+  const p=DATA.profile, w=W();
   const protein = Math.round(1.8*w);
   let fat = Math.round((p.mode==='low'?1.0:0.8)*w);
   let carbs = (kcal - protein*4 - fat*9)/4;
@@ -412,15 +430,17 @@ function macrosFor(kcal){
 function dayInfo(iso){
   const p=DATA.profile, d=DATA.days[iso]||{}, pr=planParams();
   const steps = (d.steps!==undefined && d.steps!==null && d.steps!=='') ? Number(d.steps) : Number(p.typicalSteps)||0;
-  const box = (d.box!==undefined) ? !!d.box : p.boxDays.includes(weekdayIdx(iso));
+  const boxState = d.box===true ? 'yes' : (d.box===false ? 'no' : 'avg');   // avg = sin decidir: cuenta la media semanal
+  const box = boxState==='yes';
   const boxMin = (d.boxMin!==undefined && d.boxMin!==null && d.boxMin!=='') ? Number(d.boxMin) : (Number(p.boxMin)||0);
   const base = bmr()*BASE_FACTOR;
-  const ks = stepsKcal(steps), kb = box ? boxKcal(boxMin) : 0;
+  const ks = stepsKcal(steps);
+  const kb = box ? boxKcal(boxMin) : (boxState==='avg' ? boxKcal(boxMin)*(Number(p.boxPerWeek)||0)/7 : 0);
   const maint = base + ks + kb;
   let target = maint - pr.deficit, floored=false;
   if(target < pr.floor){ target = pr.floor; floored=true; }
   target = Math.round(target/10)*10;
-  return {iso, steps, box, boxMin, base, ks, kb, maint, deficit:pr.deficit, target, floored, macros:macrosFor(target)};
+  return {iso, steps, box, boxState, boxMin, base, ks, kb, maint, deficit:pr.deficit, target, floored, macros:macrosFor(target)};
 }
 
 /* =========================================================
@@ -551,6 +571,7 @@ function renderMenu(){
   const d0=parseISO(dates[0]), d6=parseISO(dates[6]);
   const lab = d0.toLocaleDateString('es-ES',{day:'numeric',month:'short'})+' – '+d6.toLocaleDateString('es-ES',{day:'numeric',month:'short'});
   const p=DATA.profile;
+  const sessions = dates.filter(iso=>(DATA.days[iso]||{}).box===true).length;
   let sub='';
   if(p.startDate){
     const wk = Math.floor((parseISO(dates[0]) - startOfWeek(parseISO(p.startDate)))/(7*86400000)) + 1;
@@ -560,7 +581,7 @@ function renderMenu(){
     <button class="round" onclick="shiftWeek(-1)">‹</button>
     <div class="label">${lab}</div>
     <button class="round" onclick="shiftWeek(1)">›</button></div>
-    <div class="week-sub">${sub}</div>
+    <div class="week-sub">${sub}${sub?' · ':''}🥊 ${sessions} ${sessions===1?'sesión':'sesiones'} (media ${Number(p.boxPerWeek)||0}/sem)</div>
     <div class="tools"><button class="btn" onclick="goThisWeek()">Esta semana</button>
     <button class="btn primary" onclick="regenWeek()">🔀 Nuevo menú</button></div>`;
 
@@ -584,9 +605,9 @@ function renderMenu(){
           <div class="field" style="${info.box?'':'opacity:.4;'}"><label>Min. fitboxing</label>
             <input type="number" inputmode="numeric" min="10" max="120" value="${info.boxMin}" ${info.box?'':'disabled'} onchange="setDay('${iso}','boxMin',this.value)"></div>
         </div>
-        <label class="check-line"><input type="checkbox" ${info.box?'checked':''} onchange="setDay('${iso}','box',this.checked)"> Entreno Brooklyn Fitboxing</label>
+        <div class="field"><label>Brooklyn Fitboxing</label>${segHtml(info.boxState, s=>`setBox('${iso}','${s}')`)}</div>
         <div class="energy">Gasto estimado <b>${Math.round(info.maint)} kcal</b>
-          <span style="opacity:.6">(base ${Math.round(info.base)} + pasos ${Math.round(info.ks)}${info.box?` + fitboxing ${Math.round(info.kb)}`:''})</span><br>
+          <span style="opacity:.6">(base ${Math.round(info.base)} + pasos ${Math.round(info.ks)}${info.kb>0?` + fitboxing ${Math.round(info.kb)}${info.boxState==='avg'?' (media)':''}`:''})</span><br>
           Déficit <b>−${Math.round(info.deficit)}</b> → objetivo <b>${info.target} kcal</b>${info.floored?' <span style="color:var(--terracotta-dark)">(suelo mínimo de seguridad)</span>':''}</div>`;
 
     day.meals.forEach((m,i)=>{
@@ -653,9 +674,9 @@ function renderProfile(){
         <option value="f" ${p.sex==='f'?'selected':''}>Mujer</option><option value="m" ${p.sex==='m'?'selected':''}>Hombre</option></select></div>
       <div class="field"><label>Edad</label><input type="number" inputmode="numeric" value="${p.age}" oninput="setP('age',this.value)"></div>
       <div class="field"><label>Altura (cm)</label><input type="number" inputmode="numeric" value="${p.height}" oninput="setP('height',this.value)"></div>
-      <div class="field"><label>Peso (kg)</label><input type="number" inputmode="decimal" step="0.1" value="${p.weight}" oninput="setP('weight',this.value)"></div>
+      <div class="field"><label>Peso inicial (kg)</label><input type="number" inputmode="decimal" step="0.1" value="${p.weight}" oninput="setP('weight',this.value)"></div>
     </div>
-    <p class="hint">Solo para adultos. Son estimaciones orientativas; no sustituyen a un dietista-nutricionista.</p>
+    <p class="hint">Solo para adultos. Son estimaciones orientativas; no sustituyen a un dietista-nutricionista. Cuando registres tu peso en Progreso, las kcal se recalculan con el último dato.</p>
   </div>
 
   <div class="card"><h2>Objetivo</h2>
@@ -671,10 +692,10 @@ function renderProfile(){
 
   <div class="card"><h2>Actividad</h2>
     <div class="field"><label>Pasos diarios habituales</label><input type="number" inputmode="numeric" value="${p.typicalSteps}" oninput="setP('typicalSteps',this.value)"></div>
-    <div class="field"><label>Días que entrenas Brooklyn Fitboxing</label>
-      <div class="chips" id="boxChips"></div></div>
+    <div class="field"><label>Sesiones de Brooklyn Fitboxing por semana (media)</label>
+      <select onchange="setP('boxPerWeek',this.value)">${[0,1,2,3,4,5,6,7].map(n=>`<option value="${n}" ${Number(p.boxPerWeek)===n?'selected':''}>${n}</option>`).join('')}</select></div>
     <div class="field"><label>Duración media de la sesión (min)</label><input type="number" inputmode="numeric" value="${p.boxMin}" oninput="setP('boxMin',this.value)"></div>
-    <p class="hint">Cada día del menú permite corregir los pasos reales y marcar si has entrenado o no.</p>
+    <p class="hint">Luego, en cada día, marca si vas o no a fitboxing y corrige los pasos. Los días “sin decidir” cuentan con la media.</p>
   </div>
 
   <div id="profileSummary"></div>
@@ -690,16 +711,7 @@ function renderProfile(){
     <div class="linkbox">${esc(link)}<b>[Suma]</b></div>
     <p class="hint">Al ejecutarlo, la app se abre con los pasos de hoy ya puestos. Puedes lanzarlo a mano o con una automatización a una hora fija.</p>
   </details></div>`;
-  renderBoxChips(); renderProfileSummary();
-}
-function renderBoxChips(){
-  const el=document.getElementById('boxChips'); if(!el) return;
-  el.innerHTML = DAY_LETTERS.map((l,i)=>`<button class="chip-day ${DATA.profile.boxDays.includes(i)?'on':''}" onclick="toggleBoxDay(${i})">${l}</button>`).join('');
-}
-function toggleBoxDay(i){
-  const a=DATA.profile.boxDays, k=a.indexOf(i);
-  if(k===-1) a.push(i); else a.splice(k,1);
-  saveData(); renderBoxChips(); renderProfileSummary();
+  renderProfileSummary();
 }
 function setP(key,val){
   DATA.profile[key] = (['sex','mode','startDate'].includes(key)) ? val : (val===''?'':Number(val));
@@ -719,7 +731,7 @@ function renderProfileSummary(){
   } else {
     notes += `<div class="ok-note">Déficit de <b>${Math.round(pr.deficit)} kcal/día</b>: dentro de un ritmo prudente para perder ${N(p.goalKg)} kg en ${N(p.weeks)} semanas.</div>`;
   }
-  const w = N(p.weight);
+  const w = W();
   if(pr.deficit*7/7700 > w*0.01){ notes += `<div class="warn">Este ritmo supera el 1 % de tu peso por semana; conviene revisarlo con un profesional.</div>`; }
   notes += `<p class="hint">Cálculo: Mifflin-St Jeor × 1,2 + pasos por encima de ${BASE_STEPS} + fitboxing (≈6,5 kcal/kg·h). El déficit se mantiene fijo, así que los días de entreno comes más. Suelo de seguridad: ${pr.floor} kcal. Proteína 1,8 g/kg; la grasa y los hidratos dependen del estilo elegido.</p>`;
   el.innerHTML = `<div class="card"><h2>Tu resultado</h2>
@@ -728,7 +740,7 @@ function renderProfileSummary(){
     <div class="stat-row"><span>Déficit diario</span><b>−${Math.round(pr.deficit)} kcal</b></div>
     <div class="stat-row"><span>Pérdida esperada</span><b>${pr.realKg.toFixed(1)} kg en ${N(p.weeks)} sem.</b></div>
     <div class="macro-line"><span class="big">${rest.kcal}</span> kcal en día sin entreno<br>P ${rest.p} g · C ${rest.c} g · G ${rest.f} g</div>
-    ${p.boxDays.length?`<div class="macro-line"><span class="big">${train.kcal}</span> kcal en día de fitboxing<br>P ${train.p} g · C ${train.c} g · G ${train.f} g</div>`:''}
+    ${Number(p.boxPerWeek)>0?`<div class="macro-line"><span class="big">${train.kcal}</span> kcal en día de fitboxing<br>P ${train.p} g · C ${train.c} g · G ${train.f} g</div>`:''}
     ${notes}</div>`;
 }
 
@@ -742,13 +754,14 @@ function renderMonth(){
   const cells=[]; for(let i=0;i<offset;i++) cells.push(null);
   for(let d=1;d<=dim;d++) cells.push(new Date(y,m,d));
   while(cells.length%7) cells.push(null);
-  const today=todayISO(); let done=0;
+  const today=todayISO(); let done=0, boxes=0;
   const grid = cells.map(d=>{
     if(!d) return '<div class="month-cell outside"></div>';
     const iso=fmtISO(d), st=DATA.days[iso]||{};
     if(st.done) done++;
-    const box = (st.box!==undefined) ? st.box : DATA.profile.boxDays.includes(weekdayIdx(iso));
-    return `<div class="month-cell ${st.done?'done':''} ${iso===today?'today':''}" onclick="toggleDone('${iso}')">${d.getDate()}${box?'<span class="bx">🥊</span>':''}</div>`;
+    if(st.box===true) boxes++;
+    const box = st.box===true;
+    return `<div class="month-cell ${st.done?'done':''} ${iso===today?'today':''}" onclick="openDaySheet('${iso}')">${d.getDate()}${box?'<span class="bx">🥊</span>':''}</div>`;
   }).join('');
   document.getElementById('view-month').innerHTML = `
     <div class="month-nav"><button onclick="shiftMonth(-1)">‹</button>
@@ -757,8 +770,9 @@ function renderMonth(){
     <div class="weekday-row">${DAY_LETTERS.map(l=>`<span>${l}</span>`).join('')}</div>
     <div class="month-grid">${grid}</div>
     <div class="legend"><span><i class="g"></i>Día cumplido</span><span><i></i>Sin marcar</span><span>🥊 Fitboxing</span></div>
-    <div class="month-summary"><span>${done}</span>días cumplidos de ${dim} este mes</div>
-    <p class="hint" style="text-align:center; margin-top:10px;">Toca un día para marcarlo como cumplido.</p>`;
+    <div class="month-summary"><span>${done}</span>días cumplidos de ${dim} este mes
+      <div style="font-size:.78rem; opacity:.7; font-weight:500; margin-top:4px;">🥊 ${boxes} ${boxes===1?'sesión':'sesiones'} de fitboxing este mes</div></div>
+    <p class="hint" style="text-align:center; margin-top:10px;">Toca un día para registrar fitboxing y pasos, o marcarlo como cumplido.</p>`;
 }
 function shiftMonth(n){ monthCursor=new Date(monthCursor.getFullYear(), monthCursor.getMonth()+n, 1); renderMonth(); }
 function toggleDone(iso){ const d=ensureDay(iso); d.done=!d.done; saveData(); renderMonth(); }
@@ -995,6 +1009,200 @@ function deleteIngredient(key){
   delete DATA.customFoods[key]; saveData(); registerCustom(); renderRecipes();
 }
 
+/* =========================================================
+   FITBOXING POR DÍA (sin decidir / voy / no voy)
+   ========================================================= */
+function segHtml(state, call){
+  const b=(s,label)=>`<button class="${state===s?'on':''}" onclick="${call(s)}">${label}</button>`;
+  return `<div class="seg">${b('avg','Sin decidir')}${b('yes','🥊 Voy')}${b('no','No voy')}</div>`;
+}
+function applyBox(iso,state){
+  const d=ensureDay(iso);
+  if(state==='yes') d.box=true; else if(state==='no') d.box=false; else delete d.box;
+}
+function setBox(iso,state){ applyBox(iso,state); saveData(); rerender(renderMenu); }
+
+/* Hoja de registro de un día desde el calendario mensual */
+let daySheetIso = null;
+function openDaySheet(iso){ daySheetIso=iso; renderDaySheet(); document.getElementById('overlay').classList.add('open'); }
+function renderDaySheet(){
+  const iso=daySheetIso, st=DATA.days[iso]||{}, d=parseISO(iso);
+  const state = st.box===true ? 'yes' : (st.box===false ? 'no' : 'avg');
+  const stepsVal = (st.steps!==undefined && st.steps!==null) ? st.steps : '';
+  document.getElementById('sheet').innerHTML = `<div class="sheet-head"><h3>${cap(d.toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long'}))}</h3><button onclick="closeSheet()">✕</button></div>
+    <div class="field"><label>Brooklyn Fitboxing</label>${segHtml(state, s=>`setBoxM('${s}')`)}</div>
+    <p class="hint" style="margin:-4px 0 12px;">“Sin decidir” cuenta con tu media de ${Number(DATA.profile.boxPerWeek)||0} sesiones por semana.</p>
+    <div class="field"><label>Pasos del día</label><input type="number" inputmode="numeric" value="${stepsVal}" placeholder="${DATA.profile.typicalSteps} (habitual)" onchange="setDayM('steps',this.value)"></div>
+    <label class="check-line"><input type="checkbox" ${st.done?'checked':''} onchange="setDayM('done',this.checked)"> Día cumplido</label>
+    <button class="btn" style="width:100%; margin-top:12px;" onclick="goToMenuDay()">Ver el menú de este día</button>`;
+}
+function setBoxM(state){ applyBox(daySheetIso,state); saveData(); renderDaySheet(); renderMonth(); }
+function setDayM(key,val){
+  const d=ensureDay(daySheetIso);
+  if(key==='steps') d.steps = (val===''||isNaN(Number(val))) ? null : Math.max(0,Math.round(Number(val)));
+  else if(key==='done') d.done = !!val;
+  saveData(); renderMonth();
+}
+function goToMenuDay(){
+  const iso=daySheetIso;
+  weekOffset = Math.round((startOfWeek(parseISO(iso)) - startOfWeek(new Date()))/(7*86400000));
+  openDays.add(iso);
+  closeSheet();
+  switchView('menu');
+}
+
+/* =========================================================
+   PROGRESO: peso y cintura
+   ========================================================= */
+const CHARTS = {};
+function sortedMeasures(){ return DATA.measures.slice().sort((a,b)=> a.date<b.date ? -1 : (a.date>b.date ? 1 : 0)); }
+/* Peso vigente: el último registrado; si no hay ninguno, el peso inicial del perfil */
+function W(){
+  const l=sortedMeasures().filter(m=>m.w>0);
+  return l.length ? l[l.length-1].w : N(DATA.profile.weight);
+}
+function fm(x,dec){ return Number(x).toFixed(dec===undefined?1:dec).replace('.',','); }
+function fmtShort(iso){ return parseISO(iso).toLocaleDateString('es-ES',{day:'numeric',month:'short'}); }
+
+/* pendiente semanal por regresión lineal (necesita al menos 7 días de margen) */
+function weeklyRate(list){
+  if(list.length<2) return null;
+  const t0=parseISO(list[0].date).getTime();
+  const xs=list.map(m=>(parseISO(m.date).getTime()-t0)/86400000), ys=list.map(m=>m.v);
+  if(xs[xs.length-1]-xs[0] < 7) return null;
+  const n=xs.length, mx=xs.reduce((a,b)=>a+b,0)/n, my=ys.reduce((a,b)=>a+b,0)/n;
+  let num=0, den=0;
+  xs.forEach((x,i)=>{ num+=(x-mx)*(ys[i]-my); den+=(x-mx)*(x-mx); });
+  return den ? num/den*7 : null;
+}
+
+function chartHtml(id, pts, color, unit, title){
+  if(pts.length<2){
+    return `<div class="card"><h2>${title}</h2><p class="hint" style="font-size:.84rem;">${pts.length?'Con un segundo registro verás aquí la evolución.':'Todavía no hay registros.'}</p></div>`;
+  }
+  const Wd=320, Hd=180, L=40, R=20, T=22, B=28;
+  const t0=parseISO(pts[0].date).getTime(), t1=parseISO(pts[pts.length-1].date).getTime(), span=Math.max(t1-t0,86400000);
+  let vmin=Math.min(...pts.map(p=>p.v)), vmax=Math.max(...pts.map(p=>p.v));
+  const pad=Math.max((vmax-vmin)*0.2, 0.5); vmin-=pad; vmax+=pad;
+  const X=t=>L+(t-t0)/span*(Wd-L-R), Y=v=>T+(1-(v-vmin)/(vmax-vmin))*(Hd-T-B);
+  const P=pts.map(p=>({x:X(parseISO(p.date).getTime()), y:Y(p.v), date:p.date, v:p.v}));
+  CHARTS[id]={pts:P, W:Wd, H:Hd, unit};
+  const grid=[0,1,2].map(i=>{ const v=vmin+(vmax-vmin)*i/2, y=Y(v);
+    return `<line x1="${L}" x2="${Wd-R}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" class="gl"/><text x="${L-6}" y="${(y+3.5).toFixed(1)}" text-anchor="end" class="ax">${fm(v)}</text>`; }).join('');
+  const path=P.map((q,i)=>`${i?'L':'M'}${q.x.toFixed(1)} ${q.y.toFixed(1)}`).join(' ');
+  const last=P[P.length-1];
+  const dots=(P.length<=30 ? P : [last]).map(q=>`<circle cx="${q.x.toFixed(1)}" cy="${q.y.toFixed(1)}" r="4" fill="${color}" stroke="#fff" stroke-width="2"/>`).join('');
+  return `<div class="card"><h2>${title}</h2>
+    <div class="chart-wrap"><svg id="${id}" viewBox="0 0 ${Wd} ${Hd}" role="img" aria-label="${title}: de ${fm(P[0].v)} a ${fm(last.v)} ${unit}">
+      ${grid}
+      <path d="${path}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+      ${dots}
+      <text x="${Math.min(last.x, Wd-R).toFixed(1)}" y="${(last.y-10).toFixed(1)}" text-anchor="end" class="lv">${fm(last.v)} ${unit}</text>
+      <text x="${L}" y="${Hd-8}" class="ax">${fmtShort(P[0].date)}</text>
+      <text x="${Wd-R}" y="${Hd-8}" text-anchor="end" class="ax">${fmtShort(last.date)}</text>
+      <line id="${id}-x" y1="${T}" y2="${Hd-B}" class="cx" style="display:none"/>
+      <circle id="${id}-c" r="6" fill="${color}" stroke="#fff" stroke-width="2" style="display:none"/>
+    </svg><div class="tip" id="${id}-t"></div></div></div>`;
+}
+function attachChart(id){
+  const c=CHARTS[id], svg=document.getElementById(id);
+  if(!c || !svg) return;
+  const tip=document.getElementById(id+'-t'), xl=document.getElementById(id+'-x'), dot=document.getElementById(id+'-c');
+  const move=ev=>{
+    const r=svg.getBoundingClientRect(), x=(ev.clientX-r.left)/r.width*c.W;
+    let best=c.pts[0];
+    c.pts.forEach(p=>{ if(Math.abs(p.x-x)<Math.abs(best.x-x)) best=p; });
+    xl.setAttribute('x1',best.x); xl.setAttribute('x2',best.x); xl.style.display='';
+    dot.setAttribute('cx',best.x); dot.setAttribute('cy',best.y); dot.style.display='';
+    tip.style.display='block';
+    tip.style.left=(best.x/c.W*r.width)+'px';
+    tip.style.top=(best.y/c.H*r.height)+'px';
+    tip.textContent=fmtShort(best.date)+' · '+fm(best.v)+' '+c.unit;
+  };
+  const hide=()=>{ xl.style.display='none'; dot.style.display='none'; tip.style.display='none'; };
+  svg.addEventListener('pointermove',move);
+  svg.addEventListener('pointerdown',move);
+  svg.addEventListener('pointerleave',hide);
+}
+
+function renderProgress(){
+  const el=document.getElementById('view-progress');
+  const p=DATA.profile, ms=sortedMeasures();
+  const ws=ms.filter(m=>m.w>0).map(m=>({date:m.date, v:m.w}));
+  const cs=ms.filter(m=>m.c>0).map(m=>({date:m.date, v:m.c}));
+  const lastW=ws.length?ws[ws.length-1]:null, lastC=cs.length?cs[cs.length-1]:null;
+  const startW=N(p.weight), goal=N(p.goalKg);
+
+  let rows='';
+  if(lastW && startW>0){
+    const lost=startW-lastW.v;
+    rows+=`<div class="stat-row"><span>Peso inicial → actual</span><b>${fm(startW)} → ${fm(lastW.v)} kg</b></div>
+      <div class="stat-row"><span>${lost>=0?'Perdido':'Ganado'}</span><b>${fm(Math.abs(lost))} kg</b></div>`;
+    if(goal>0 && lost>0){
+      const pct=clamp(lost/goal*100,0,100);
+      rows+=`<div class="bar" style="margin:10px 0 4px;"><span style="width:${pct.toFixed(0)}%"></span></div>
+        <div class="hint" style="margin:0 0 6px;">${Math.round(pct)} % del objetivo de ${fm(goal)} kg</div>`;
+    }
+  }
+  if(cs.length>=2){
+    const dc=lastC.v-cs[0].v;
+    rows+=`<div class="stat-row"><span>Cintura inicial → actual</span><b>${fm(cs[0].v)} → ${fm(lastC.v)} cm</b></div>
+      <div class="stat-row"><span>${dc<=0?'Reducido':'Aumentado'}</span><b>${fm(Math.abs(dc))} cm</b></div>`;
+  } else if(cs.length===1){
+    rows+=`<div class="stat-row"><span>Cintura</span><b>${fm(lastC.v)} cm</b></div>`;
+  }
+  let notes='';
+  if(lastW){
+    const win=ws.filter(m=>parseISO(m.date)>=addDays(parseISO(lastW.date),-28));
+    const rate=weeklyRate(win);
+    if(rate!==null){
+      rows+=`<div class="stat-row"><span>Ritmo reciente</span><b>${rate>0?'+':'−'}${fm(Math.abs(rate),2)} kg/semana</b></div>`;
+      if(rate<0 && Math.abs(rate)>0.01*lastW.v){
+        notes+=`<div class="warn">Estás perdiendo más de un 1 % de tu peso por semana. Es un ritmo alto; conviene revisarlo con un profesional.</div>`;
+      }
+    }
+  }
+  const summary = rows
+    ? `<div class="card"><h2>Resumen</h2>${rows}${notes}<p class="hint">El peso incluye agua, músculo y grasa, y varía de un día a otro. Fíjate en la tendencia de varias semanas y en la cintura.</p></div>`
+    : `<div class="card"><h2>Resumen</h2><p class="hint" style="font-size:.84rem;">Registra tu primer peso o medida para empezar a ver tu evolución.</p></div>`;
+
+  const history = ms.slice().reverse().map(m=>
+    `<div class="ing-row"><span>${fmtShort(m.date)} <span style="opacity:.55">${parseISO(m.date).getFullYear()}</span> · ${m.w>0?fm(m.w)+' kg':'—'} · ${m.c>0?fm(m.c)+' cm':'—'}</span><button onclick="deleteMeasure('${m.date}')">✕</button></div>`).join('');
+
+  el.innerHTML = `<div class="card"><h2>Registrar medidas</h2>
+    <div class="field"><label>Fecha</label><input id="pm-date" type="date" value="${todayISO()}"></div>
+    <div class="grid2">
+      <div class="field"><label>Peso (kg)</label><input id="pm-w" type="number" inputmode="decimal" step="0.1" placeholder="${lastW?fm(lastW.v):''}"></div>
+      <div class="field"><label>Cintura (cm)</label><input id="pm-c" type="number" inputmode="decimal" step="0.1" placeholder="${lastC?fm(lastC.v):''}"></div>
+    </div>
+    <button class="btn primary" style="width:100%;" onclick="saveMeasure()">Guardar</button>
+    <p class="hint">Pésate a la misma hora, por ejemplo en ayunas, y mide la cintura siempre igual: a la altura del ombligo, de pie y sin apretar. Puedes guardar solo una de las dos. Las kcal del menú se recalculan con tu último peso.</p></div>
+    ${summary}
+    ${chartHtml('chart-w', ws, '#B5623A', 'kg', 'Peso')}
+    ${chartHtml('chart-c', cs, '#5B7B5A', 'cm', 'Cintura')}
+    ${history?`<div class="card"><h2>Historial</h2>${history}</div>`:''}`;
+  attachChart('chart-w'); attachChart('chart-c');
+}
+function saveMeasure(){
+  const val=id=>String(document.getElementById(id).value||'').replace(',','.');
+  const date=val('pm-date') || todayISO();
+  const wv=val('pm-w'), cv=val('pm-c');
+  const w = wv==='' ? null : Number(wv), c = cv==='' ? null : Number(cv);
+  if(w===null && c===null){ toast('Pon el peso o la cintura'); return; }
+  if(w!==null && !(w>=35 && w<=250)){ toast('El peso debe estar entre 35 y 250 kg'); return; }
+  if(c!==null && !(c>=40 && c<=200)){ toast('La cintura debe estar entre 40 y 200 cm'); return; }
+  let e=DATA.measures.find(m=>m.date===date);
+  if(!e){ e={date, w:null, c:null}; DATA.measures.push(e); }
+  if(w!==null) e.w=w;
+  if(c!==null) e.c=c;
+  saveData(); renderProgress(); toast('Registrado');
+}
+function deleteMeasure(date){
+  if(!confirm('¿Borrar el registro del '+fmtShort(date)+'?')) return;
+  DATA.measures=DATA.measures.filter(m=>m.date!==date);
+  saveData(); renderProgress();
+}
+
 /* ---- Lista de recetas con calculadora de ración ---- */
 function renderRecipes(){
   const el=document.getElementById('view-recipes');
@@ -1035,18 +1243,19 @@ function calcPortion(id,v){
    NAVEGACIÓN
    ========================================================= */
 function switchView(name){
-  ['menu','recipes','profile','month'].forEach(v=>{
+  ['menu','recipes','profile','month','progress'].forEach(v=>{
     document.getElementById('view-'+v).classList.toggle('active', v===name);
     document.getElementById('nav-'+v).classList.toggle('active', v===name);
   });
-  const t={menu:'Menú semanal', recipes:'Mis recetas', profile:'Tu objetivo', month:'Seguimiento'};
-  const s={menu:'5 comidas al día con cantidades ajustadas', recipes:'Calcula las kcal de tu ración', profile:'Calorías y macros según tus datos', month:'Verde = día cumplido'};
+  const t={menu:'Menú semanal', recipes:'Mis recetas', profile:'Tu objetivo', month:'Calendario', progress:'Tu progreso'};
+  const s={menu:'5 comidas al día con cantidades ajustadas', recipes:'Calcula las kcal de tu ración', profile:'Calorías y macros según tus datos', month:'Verde = día cumplido · toca un día para registrarlo', progress:'Peso y cintura'};
   document.getElementById('headerTitle').textContent=t[name];
   document.getElementById('headerSub').textContent=s[name];
   if(name==='menu') renderMenu();
   if(name==='profile') renderProfile();
   if(name==='month') renderMonth();
   if(name==='recipes') renderRecipes();
+  if(name==='progress') renderProgress();
   window.scrollTo(0,0);
 }
 
