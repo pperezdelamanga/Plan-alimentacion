@@ -607,7 +607,7 @@ function renderMenu(){
           <div class="field" style="${info.box?'':'opacity:.4;'}"><label>Min. fitboxing</label>
             <input type="number" inputmode="numeric" min="10" max="120" value="${info.boxMin}" ${info.box?'':'disabled'} onchange="setDay('${iso}','boxMin',this.value)"></div>
         </div>
-        <div class="field"><label>Brooklyn Fitboxing</label>${segHtml(info.boxState, s=>`setBox('${iso}','${s}')`)}</div>
+        ${iso===today?`<button class="btn" style="width:100%; margin-bottom:10px;" onclick="pasteSteps('${iso}')">📋 Pegar pasos copiados</button>`:''}<div class="field"><label>Brooklyn Fitboxing</label>${segHtml(info.boxState, s=>`setBox('${iso}','${s}')`)}</div>
         <div class="energy">Gasto estimado <b>${Math.round(info.maint)} kcal</b>
           <span style="opacity:.6">(base ${Math.round(info.base)} + pasos ${Math.round(info.ks)}${info.kb>0?` + fitboxing ${Math.round(info.kb)}${info.boxState==='avg'?' (media)':''}`:''})</span><br>
           Déficit <b>−${Math.round(info.deficit)}</b> → objetivo <b>${info.target} kcal</b>${info.floored?' <span style="color:var(--terracotta-dark)">(suelo mínimo de seguridad)</span>':''}</div>`;
@@ -702,16 +702,22 @@ function renderProfile(){
 
   <div id="profileSummary"></div>
 
-  <div class="card"><details class="help"><summary>📱 Pasos desde la app Salud del iPhone</summary>
-    <p class="hint" style="font-size:.8rem;">Una web app no puede leer Salud directamente, pero un atajo de iPhone puede pasarle los pasos:</p>
+  <div class="card"><details class="help" open><summary>📱 Pasos desde la app Salud del iPhone</summary>
+    <p class="hint" style="font-size:.8rem;">Una web app no puede leer Salud directamente, pero un atajo del iPhone puede copiar tus pasos y la app los recoge con un botón.</p>
+    <p style="font-size:.84rem; font-weight:700; margin:10px 0 0;">Opción recomendada: copiar y pegar</p>
     <ol>
       <li>Abre <b>Atajos</b> → nuevo atajo.</li>
       <li>Añade <b>Encontrar muestras de Salud</b>: tipo Pasos, fecha de inicio “es hoy”.</li>
       <li>Añade <b>Calcular estadísticas</b> → Suma.</li>
-      <li>Añade <b>Abrir URL</b> con este enlace y, al final, la variable de la suma:</li>
+      <li>Añade <b>Copiar en el portapapeles</b> con el resultado de la suma.</li>
+      <li>Ejecuta el atajo, abre la app y, en el día de hoy del <b>Menú</b>, pulsa <b>📋 Pegar pasos copiados</b>.</li>
     </ol>
+    <p class="hint">La primera vez, iOS te preguntará si permites pegar. Funciona también con la app abierta desde la pantalla de inicio.</p>
+    <p style="font-size:.84rem; font-weight:700; margin:12px 0 0;">Alternativa: abrir un enlace</p>
+    <p class="hint" style="font-size:.8rem;">Cambia el último paso por <b>Abrir URL</b> con este enlace y, al final, la suma:</p>
     <div class="linkbox">${esc(link)}<b>[Suma]</b></div>
-    <p class="hint">Al ejecutarlo, la app se abre con los pasos de hoy ya puestos. Puedes lanzarlo a mano o con una automatización a una hora fija.</p>
+    <p class="hint">Ojo: el enlace se abre en Safari, que guarda sus datos aparte de la app de la pantalla de inicio. Los pasos solo se verán si usas la app desde Safari. Si usas el icono de la pantalla de inicio, mejor la opción de copiar y pegar.</p>
+    <p class="hint">También puedes escribir los pasos a mano en cada día del menú.</p>
   </details></div>`;
   renderProfileSummary();
 }
@@ -1071,6 +1077,26 @@ function applyBox(iso,state){
   if(state==='yes') d.box=true; else if(state==='no') d.box=false; else delete d.box;
 }
 function setBox(iso,state){ applyBox(iso,state); saveData(); rerender(renderMenu); }
+
+/* Pasos copiados al portapapeles por el atajo de iPhone: "8432", "8.432" o "8432,0" */
+function parseSteps(txt){
+  const m=String(txt||'').match(/\d[\d.,\s]*/);
+  if(!m) return null;
+  let s=m[0].trim().replace(/\s+/g,'');
+  if(/^\d{1,3}([.,]\d{3})+$/.test(s)) s=s.replace(/[.,]/g,'');   // 8.432 u 8,432 -> separador de miles
+  else s=s.replace(',','.');                                       // 8432,0 -> decimal
+  const n=Math.round(parseFloat(s));
+  return (n>=0 && n<=100000) ? n : null;
+}
+async function pasteSteps(iso){
+  let txt='';
+  try{ txt = await navigator.clipboard.readText(); }
+  catch(e){ toast('No he podido leer el portapapeles: escribe los pasos a mano'); return; }
+  const n=parseSteps(txt);
+  if(n===null){ toast('Lo copiado no parece un número de pasos'); return; }
+  ensureDay(iso).steps=n; saveData(); rerender(renderMenu);
+  toast('Pasos de hoy: '+n.toLocaleString('es-ES'));
+}
 
 /* Hoja de registro de un día desde el calendario mensual */
 let daySheetIso = null;
