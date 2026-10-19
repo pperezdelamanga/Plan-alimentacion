@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mealplan-cache-v8';
+const CACHE_NAME = 'mealplan-cache-v9';
 const ASSETS = [
   './',
   './index.html',
@@ -26,6 +26,7 @@ self.addEventListener('activate', (event) => {
 // Network-first so edits/deploys show up quickly; falls back to cache offline.
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+  if (new URL(event.request.url).origin !== self.location.origin) return;   // no guardar en caché las consultas a internet (Open Food Facts)
   event.respondWith(
     fetch(event.request)
       .then((res) => {
