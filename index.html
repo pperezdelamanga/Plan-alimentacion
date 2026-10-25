@@ -186,6 +186,7 @@
   .meal-actions .btn{flex:1; padding:9px 6px; font-size:.8rem;}
   .mtar{opacity:.5; font-weight:500;}
   .prop-card{background:#fff; border:1px solid var(--line); border-radius:12px; padding:12px; margin-bottom:10px;}
+  .seed-tag{display:inline-block; margin:6px 0 2px; font-size:.72rem; font-weight:600; background:#F6E7C8; color:#7A5A12; border-radius:8px; padding:4px 8px;}
   .rf-ing{margin-bottom:10px;}
   .rf-l1{display:grid; grid-template-columns:1fr 34px; gap:6px; margin-bottom:5px;}
   .rf-l1 input,.rf-l2 input,.rf-l2 select{border:1px solid var(--line); border-radius:10px; padding:9px 10px; font-size:.88rem; font-family:'Inter',sans-serif; background:#fff; color:var(--olive); min-width:0; width:100%;}
@@ -398,7 +399,7 @@ bebida_almendra|Bebida de almendras (sin azúcar)|15|0.5|0.3|1.2|||ml|
 nata|Nata para cocinar|195|2.5|3.5|19||15|ml|
 mantequilla|Mantequilla|717|0.9|0.1|81||10||
 garbanzos|Garbanzos cocidos|120|7.5|18|2.5||||
-alubias|Alubias cocidas|90|6.5|14|0.5||||judias blancas
+alubias|Alubias cocidas|90|6.5|14|0.5||||judias blancas pintas pinta
 hummus|Hummus|230|8|13|18||15||
 avena_copos|Copos de avena|370|13|60|7||10||
 quinoa|Quinoa cocida|120|4.4|21|1.9||||
@@ -440,6 +441,9 @@ vino|Vino tinto|85|0.1|2.6|0|||ml|
 caldo|Caldo de pollo / verduras|5|0.5|0.5|0.2|||ml|
 gazpacho|Gazpacho|45|0.8|4.5|2.5|||ml|
 tortilla_patata|Tortilla de patata|190|6|13|13||||
+pan_cristal|Pan de cristal / chapata|255|8.5|50|2.5|70|||chapata ciabatta pan cristal
+queso_lonchas|Queso en lonchas|320|22|2|25|20:loncha|||lonchas queso fundido
+hamburguesa_pollo|Hamburguesa de pollo (cruda)|150|18|1.5|8|100|||burger pollo
 `;
 (function loadFoodDb(){
   FOOD_DB.trim().split('\n').forEach(line=>{
@@ -461,6 +465,51 @@ tortilla_patata|Tortilla de patata|190|6|13|13||||
 /* Valores originales: sirven para «restablecer» cuando se corrigen en Mi despensa */
 const BASE_VALS = {};
 Object.keys(FOODS).forEach(k=>{ const x=FOODS[k]; BASE_VALS[k]=[x.k,x.p,x.c,x.f]; });
+
+/* Recetas habituales precargadas (cantidades por ración, estimadas: se pueden editar) */
+const SEEDS = [
+  {id:'seed_tortilla', name:'Tortilla de patatas (patata al microondas)', ing:[['patata',200],['huevo',110],['aove',8]], total:0, pools:['comida','cena']},
+  {id:'seed_pisto', name:'Pisto', ing:[['calabacin',150],['cebolla',50],['pimiento_verde',60],['tomate_triturado',150],['aove',10]], total:330, pools:['comida','cena']},
+  {id:'seed_lentejas', name:'Lentejas con verdura y pollo', ing:[['lentejas',200],['zanahoria',60],['cebolla',40],['tomate_triturado',50],['pollo',100],['aove',8]], total:0, pools:['comida']},
+  {id:'seed_crema_calabacin_filete', rev:2, name:'Crema de calabacín con filete de pollo', ing:[['calabacin',250],['patata',60],['cebolla',40],['aove',8],['pollo',120]], total:520, pools:['cena','comida']},
+  {id:'seed_crema_calabacin_burger', rev:2, name:'Crema de calabacín con hamburguesa de pollo', ing:[['calabacin',250],['patata',60],['cebolla',40],['aove',8],['hamburguesa_pollo',100]], total:500, pools:['cena','comida']},
+  {id:'seed_crema_calabaza_filete', rev:2, name:'Crema de calabaza con filete de pollo', ing:[['calabaza',250],['patata',50],['cebolla',40],['zanahoria',40],['aove',8],['pollo',120]], total:520, pools:['cena','comida']},
+  {id:'seed_crema_calabaza_burger', rev:2, name:'Crema de calabaza con hamburguesa de pollo', ing:[['calabaza',250],['patata',50],['cebolla',40],['zanahoria',40],['aove',8],['hamburguesa_pollo',100]], total:500, pools:['cena','comida']},
+  {id:'seed_hamburguesa', name:'Hamburguesa con pan de cristal, queso, tomate y lechuga', ing:[['hamburguesa',120],['pan_cristal',70],['queso_lonchas',20],['tomate',50],['lechuga',20]], total:0, pools:['comida','cena']},
+  {id:'seed_sopa_fideos', rev:2, name:'Sopa de fideos con patata, zanahoria, pollo y chorizo', ing:[['pasta',40],['patata',80],['zanahoria',50],['pollo',80],['chorizo',10]], total:500, pools:['cena','comida']},
+  {id:'seed_judias_arroz', rev:2, name:'Judías pintas con arroz y chorizo', ing:[['alubias',200],['arroz',40],['chorizo',20],['cebolla',30],['tomate_triturado',40],['aove',5]], total:420, pools:['comida']}
+];
+const SEEDS_REMOVED = ['seed_crema_calabacin','seed_crema_calabaza'];   // sustituidas por las versiones con pollo
+function seedRecipes(){
+  if(!Array.isArray(DATA.seeded)) DATA.seeded=[];
+  if(!DATA.seedRev) DATA.seedRev={};
+  let n=0;
+  // las versiones antiguas sin tocar se retiran; si las has editado, se respetan
+  SEEDS_REMOVED.forEach(id=>{
+    const i=DATA.myRecipes.findIndex(r=>r.id===id && r.seed);
+    if(i>=0){ DATA.myRecipes.splice(i,1); n++; }
+  });
+  SEEDS.forEach(sd=>{
+    const rev=sd.rev||1;
+    const build=()=>{
+      const ingredients=sd.ing.filter(i=>FOODS[i[0]]).map(i=>({f:i[0], g:i[1]}));
+      const sum=ingredients.reduce((a,i)=>a+i.g,0), w=sd.total||sum;
+      return {id:sd.id, name:sd.name, ingredients, totalG:sd.total||0, portionG:w, pools:sd.pools.slice(), auto:true, seed:true};
+    };
+    if(!DATA.seeded.includes(sd.id)){                    // primera vez: se carga
+      DATA.seeded.push(sd.id); DATA.seedRev[sd.id]=rev;
+      if(!DATA.myRecipes.some(r=>r.id===sd.id)){ DATA.myRecipes.push(build()); n++; }
+      return;
+    }
+    if((DATA.seedRev[sd.id]||1)<rev){                    // versión nueva: solo se actualiza si no la has tocado
+      DATA.seedRev[sd.id]=rev;
+      const i=DATA.myRecipes.findIndex(r=>r.id===sd.id);
+      if(i>=0 && DATA.myRecipes[i].seed){ DATA.myRecipes[i]=build(); n++; }
+    }
+  });
+  saveData();
+  return n;
+}
 
 /* =========================================================
    RECETAS (s:1 = cantidad ajustable al objetivo)
@@ -518,6 +567,8 @@ const RECIPES = {
   ]
 };
 
+/* Alimentos que en el modo «bajo en hidratos» solo se proponen los días de fitboxing */
+const CARB_FOODS = ['arroz','pasta','pan','pan_blanco','pan_molde','pan_cristal','arroz_cocido','pasta_cocida','wrap','cuscus','harina','pan_rallado'];
 const CARB_SIDES = [
   {f:'arroz', g:60, s:1, tag:'guarnición'},
   {f:'pasta', g:60, s:1, tag:'guarnición'},
@@ -550,6 +601,8 @@ function defaultData(){
     days:{},   // iso -> {steps, box, boxMin, done}
     menus:{},  // iso -> {desayuno:'d1', ...}
     customFoods:{}, // ingredientes propios
+    seeded:[],      // recetas precargadas ya incorporadas
+    seedRev:{},     // versión de cada una
     log:{},         // diario: iso -> {comida: [{id,name,items,snap}]}
     overrides:{},   // valores corregidos de alimentos de la base: id -> {k,p,c,f}
     myRecipes:[],   // recetas propias
@@ -566,7 +619,7 @@ function loadData(){
     delete oldP.boxDays;
     d.profile = Object.assign(def.profile, oldP);
     d.days = d.days||{}; d.menus = d.menus||{};
-    d.customFoods = d.customFoods||{}; d.overrides = d.overrides||{}; d.log = d.log||{}; d.myRecipes = d.myRecipes||[]; d.measures = d.measures||[];
+    d.customFoods = d.customFoods||{}; d.overrides = d.overrides||{}; d.log = d.log||{}; d.seeded = d.seeded||[]; d.seedRev = d.seedRev||{}; d.myRecipes = d.myRecipes||[]; d.measures = d.measures||[];
     return d;
   }catch(e){ return defaultData(); }
 }
@@ -575,6 +628,7 @@ function saveData(){
   catch(e){ toast('No se pudo guardar en este navegador'); }
 }
 let DATA = loadData();
+seedRecipes();
 registerCustom();
 
 /* =========================================================
@@ -987,14 +1041,19 @@ function proposalsFor(iso,slot,skip,n){
   const s=SLOTS.find(x=>x.key===slot), b=slotBudget(iso,slot);
   if(b.k<80) return {b, list:[], none:true, reset:false};
   const recent=recentNames(iso,2), seen=skip||[];
-  const pool=RECIPES[s.pool].filter(r=>r.auto!==false);
-  const scored=pool.map(r=>{ const m=mealFor(iso,slot,r,b.k); return {id:r.id, m, score:proposeScore(m,b,recent), fit:Math.abs(m.kcal-b.k)/b.k}; })
+  const noCarbs = DATA.profile.mode==='low' && !b.info.box;      // bajo en hidratos: arroz, pasta y pan solo en día de fitboxing
+  const pool=RECIPES[s.pool].filter(r=>r.auto!==false && !(noCarbs && r.carb));
+  const scored=pool.map(r=>{ const m=mealFor(iso,slot,r,b.k); return {id:r.id, m, custom:!!r.custom, score:proposeScore(m,b,recent)-(r.custom?0.3:0), fit:Math.abs(m.kcal-b.k)/b.k}; })
     .sort((x,y)=>x.score-y.score);
   const good=scored.filter(x=>x.fit<=0.15);                    // solo platos que de verdad encajan con las kcal
   const base=good.length>=Math.min(n,scored.length) ? good : scored;
   const fresh=base.filter(x=>!seen.includes(x.id));
   const reset=fresh.length===0;                                  // ya has visto todos: se vuelve a empezar
   const list=reset ? base.slice(0,n) : fresh.concat(base.filter(x=>seen.includes(x.id))).slice(0,n);
+  if(list.length>1 && !list.some(x=>x.custom)){                  // siempre que se pueda, una de tus recetas entre las propuestas
+    const mine=(reset?base:fresh).filter(x=>x.custom && !list.includes(x))[0] || base.filter(x=>x.custom && !list.includes(x))[0];
+    if(mine) list[list.length-1]=mine;
+  }
   return {b, list, none:false, reset};
 }
 let proposeCtx=null;
@@ -1188,7 +1247,7 @@ function registerCustom(){
     const key='u_'+r.id;
     FOODS[key] = {n:r.name, k:t.k*100/t.w, p:t.p*100/t.w, c:t.c*100/t.w, f:t.f*100/t.w, custom:true, dish:true};
     (r.pools||[]).forEach(pool=>{
-      if(RECIPES[pool]) RECIPES[pool].push({id:key, name:r.name, custom:true, auto:r.auto!==false,
+      if(RECIPES[pool]) RECIPES[pool].push({id:key, name:r.name, custom:true, auto:r.auto!==false, carb:(r.ingredients||[]).some(i=>CARB_FOODS.includes(i.f)),
         items:[{f:key, g:Number(r.portionG)||250, s:1}]});
     });
   });
@@ -1949,7 +2008,7 @@ function renderRecipes(){
   list.forEach(r=>{
     const t=recipeTotals(r), per=100/t.w;
     const where=(r.pools||[]).map(p=>POOLS.find(x=>x.key===p).label.toLowerCase()).join(', ');
-    html+=`<div class="card"><div class="rec-name">${esc(r.name)}</div>
+    html+=`<div class="card"><div class="rec-name">${esc(r.name)}</div>${r.seed?'<div class="seed-tag">⚠ Cantidades estimadas por ración: revísalas y edítalas con tus medidas</div>':''}
       <div class="rec-meta">${Math.round(t.k*per)} kcal / 100 g · P ${(t.p*per).toFixed(1)} · C ${(t.c*per).toFixed(1)} · G ${(t.f*per).toFixed(1)}${r.direct?' · valores por ración':''}</div>
       <div class="field"><label>Peso de tu ración (g)</label><input type="number" inputmode="decimal" value="${r.portionG}" oninput="calcPortion('${r.id}',this.value)"></div>
       <div class="calc-out" id="co-${r.id}"></div>
