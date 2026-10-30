@@ -227,6 +227,29 @@
   .bottom-bar button.active{opacity:1; color:var(--terracotta);}
   .bottom-bar .ico{font-size:1.15rem;}
 
+
+  /* semana */
+  .wmeal{display:flex; align-items:flex-start; gap:10px; border-top:1px solid var(--line); padding:10px 0;}
+  .wmeal:first-of-type{border-top:none;}
+  .wm-main{flex:1; min-width:0;}
+  .mtext{font-size:.95rem; font-weight:600; line-height:1.35; margin-top:4px;}
+  .opt{display:block; width:100%; text-align:left; margin-top:5px; background:var(--cream); border:1px solid var(--line); border-radius:10px; padding:8px 10px; font-size:.84rem; line-height:1.3; color:var(--olive); font-family:'Inter',sans-serif; cursor:pointer;}
+  .opt.on{background:var(--olive-soft); border-color:var(--olive-soft); color:#fff; font-weight:600;}
+  .mkbtn{flex:0 0 auto; width:44px; height:44px; border:none; background:none; padding:0; cursor:pointer; display:flex; align-items:center; justify-content:center;}
+  .mk{width:34px; height:34px; border-radius:50%; border:2px solid var(--line); background:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:1.1rem; color:#fff;}
+  .mk.ok{background:var(--olive-soft); border-color:var(--olive-soft);}
+  .mk.alt{background:var(--gold); border-color:var(--gold); color:var(--olive);}
+  .ta{width:100%; border:1px solid var(--line); border-radius:10px; padding:9px 12px; font-size:.9rem; font-family:'Inter',sans-serif; background:#fff; color:var(--olive);}
+  textarea.ta{resize:vertical;}
+  .shop-row{display:flex; align-items:center; border-bottom:1px dashed var(--line);}
+  .shop-row:last-child{border-bottom:none;}
+  .shop-main{flex:1; display:flex; align-items:center; gap:12px; background:none; border:none; padding:11px 2px; font-size:.94rem; text-align:left; color:var(--olive); font-family:'Inter',sans-serif; cursor:pointer;}
+  .sbox{width:24px; height:24px; border-radius:7px; border:2px solid var(--line); display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:.9rem; flex:0 0 auto;}
+  .shop-row.got .sbox{background:var(--olive-soft); border-color:var(--olive-soft);}
+  .shop-row.got .shop-main{opacity:.45; text-decoration:line-through;}
+  .shop-x{background:none; border:none; color:var(--terracotta); font-size:1rem; padding:8px; cursor:pointer;}
+  body.nokcal .kc{display:none !important;}
+
   .toast{position:fixed; left:50%; bottom:100px; transform:translateX(-50%); background:var(--olive); color:#fff; padding:10px 16px; border-radius:20px; font-size:.8rem; font-weight:600; z-index:60; display:none;}
   .toast.show{display:block;}
 </style>
@@ -239,7 +262,10 @@
 </header>
 
 <main>
-  <section id="view-menu" class="view active"></section>
+  <section id="view-week" class="view active"></section>
+  <section id="view-shop" class="view"></section>
+  <section id="view-more" class="view"></section>
+  <section id="view-menu" class="view"></section>
   <section id="view-recipes" class="view"></section>
   <section id="view-profile" class="view"></section>
   <section id="view-month" class="view"></section>
@@ -247,11 +273,11 @@
 </main>
 
 <div class="bottom-bar">
-  <button id="nav-menu" class="active" onclick="switchView('menu')"><span class="ico">🍽️</span>Diario</button>
+  <button id="nav-week" class="active" onclick="switchView('week')"><span class="ico">🗓️</span>Semana</button>
   <button id="nav-recipes" onclick="switchView('recipes')"><span class="ico">🥘</span>Recetas</button>
-  <button id="nav-profile" onclick="switchView('profile')"><span class="ico">🎯</span>Objetivo</button>
-  <button id="nav-month" onclick="switchView('month')"><span class="ico">🗓️</span>Calendario</button>
+  <button id="nav-shop" onclick="switchView('shop')"><span class="ico">🛒</span>Compra</button>
   <button id="nav-progress" onclick="switchView('progress')"><span class="ico">📈</span>Progreso</button>
+  <button id="nav-more" onclick="switchView('more')"><span class="ico">⋯</span>Más</button>
 </div>
 
 <div class="overlay" id="overlay"><div class="sheet" id="sheet"></div></div>
@@ -606,7 +632,8 @@ function defaultData(){
     log:{},         // diario: iso -> {comida: [{id,name,items,snap}]}
     overrides:{},   // valores corregidos de alimentos de la base: id -> {k,p,c,f}
     myRecipes:[],   // recetas propias
-    measures:[]     // [{date, w, c}] peso (kg) y cintura (cm)
+    measures:[],    // [{date, w, c}] peso (kg) y cintura (cm)
+    week:defaultWeek()  // menú semanal estructurado
   };
 }
 function loadData(){
@@ -620,6 +647,8 @@ function loadData(){
     d.profile = Object.assign(def.profile, oldP);
     d.days = d.days||{}; d.menus = d.menus||{};
     d.customFoods = d.customFoods||{}; d.overrides = d.overrides||{}; d.log = d.log||{}; d.seeded = d.seeded||[]; d.seedRev = d.seedRev||{}; d.myRecipes = d.myRecipes||[]; d.measures = d.measures||[];
+    if(!d.week || !d.week.days) d.week = defaultWeek();
+    d.week.shop = d.week.shop||{chk:{},extra:[]}; d.week.opts = d.week.opts||defaultWeek().opts; d.week.train = d.week.train||{}; d.week.prep = d.week.prep||[];
     return d;
   }catch(e){ return defaultData(); }
 }
@@ -773,7 +802,7 @@ function sumTotals(list){ return list.reduce((a,e)=>{ const t=entryTotals(e); re
 function slotTotals(iso,slot){ return sumTotals(dayEntries(iso,slot)); }
 function dayTotals(iso){ return sumTotals([].concat(...SLOTS.map(s=>dayEntries(iso,s.key)))); }
 function allSlotsFilled(iso){ return SLOTS.every(s=>dayEntries(iso,s.key).length>0); }
-function isDone(iso){ return !!(DATA.days[iso]||{}).done || allSlotsFilled(iso); }
+function isDone(iso){ return !!(DATA.days[iso]||{}).done || allSlotsFilled(iso) || dayMealsDone(iso)>=5; }
 function newEntryId(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,5); }
 function addEntry(iso,slot,name,items){
   const ok=(items||[]).filter(it=>FOODS[it.f] && Number(it.g)>0).map(it=>({f:it.f, g:Math.round(Number(it.g)*10)/10}));
@@ -897,7 +926,7 @@ function setDay(iso,key,val){
   else if(key==='done'){ d.done = !!val; }
   saveData(); rerender(renderMenu);
 }
-function closeSheet(){ formOpen=false; editorCtx=null; document.getElementById('overlay').classList.remove('open'); }
+function closeSheet(){ formOpen=false; editorCtx=null; document.getElementById('overlay').classList.remove('open'); if(typeof refreshWeekIfActive==='function') refreshWeekIfActive(); }
 function openOverlay(){ formOpen=true; document.getElementById('overlay').classList.add('open'); }
 document.getElementById('overlay').addEventListener('click',e=>{ if(e.target.id==='overlay' && !formOpen) closeSheet(); });
 function afterAdd(msg){ closeSheet(); rerender(renderMenu); if(msg) toast(msg); }
@@ -1801,7 +1830,7 @@ function renderDaySheet(){
     <p class="hint" style="margin:-4px 0 12px;">“Sin decidir” cuenta con tu media de ${Number(DATA.profile.boxPerWeek)||0} sesiones por semana.</p>
     <div class="field"><label>Pasos del día</label><input type="number" inputmode="numeric" value="${stepsVal}" placeholder="${DATA.profile.typicalSteps} (habitual)" onchange="setDayM('steps',this.value)"></div>
     <label class="check-line"><input type="checkbox" ${st.done?'checked':''} onchange="setDayM('done',this.checked)"> Día cumplido</label>
-    <button class="btn" style="width:100%; margin-top:12px;" onclick="goToMenuDay()">Ver el diario de este día</button>`;
+    <button class="btn" style="width:100%; margin-top:12px;" onclick="goToMenuDay()">Ver este día en la app</button>`;
 }
 function setBoxM(state){ applyBox(daySheetIso,state); saveData(); renderDaySheet(); renderMonth(); }
 function setDayM(key,val){
@@ -1811,9 +1840,10 @@ function setDayM(key,val){
   saveData(); renderMonth();
 }
 function goToMenuDay(){
-  selDay=daySheetIso;
+  const iso=daySheetIso;
   closeSheet();
-  switchView('menu');
+  if(W_().showKcal){ selDay=iso; switchView('menu'); }
+  else { wkIso=iso; switchView('week'); }
 }
 
 /* =========================================================
@@ -2009,9 +2039,10 @@ function renderRecipes(){
     const t=recipeTotals(r), per=100/t.w;
     const where=(r.pools||[]).map(p=>POOLS.find(x=>x.key===p).label.toLowerCase()).join(', ');
     html+=`<div class="card"><div class="rec-name">${esc(r.name)}</div>${r.seed?'<div class="seed-tag">⚠ Cantidades estimadas por ración: revísalas y edítalas con tus medidas</div>':''}
-      <div class="rec-meta">${Math.round(t.k*per)} kcal / 100 g · P ${(t.p*per).toFixed(1)} · C ${(t.c*per).toFixed(1)} · G ${(t.f*per).toFixed(1)}${r.direct?' · valores por ración':''}</div>
-      <div class="field"><label>Peso de tu ración (g)</label><input type="number" inputmode="decimal" value="${r.portionG}" oninput="calcPortion('${r.id}',this.value)"></div>
-      <div class="calc-out" id="co-${r.id}"></div>
+      <div class="rec-meta kc">${Math.round(t.k*per)} kcal / 100 g · P ${(t.p*per).toFixed(1)} · C ${(t.c*per).toFixed(1)} · G ${(t.f*per).toFixed(1)}${r.direct?' · valores por ración':''}</div>
+      ${(r.ingredients&&r.ingredients.length)?`<ul class="ings" style="margin:6px 0 8px;">${r.ingredients.filter(i=>FOODS[i.f]&&!FOODS[i.f].dish).map(i=>`<li><span>${esc(FOODS[i.f].n)}</span><b>${fmtAmount(i.f,i.g)}</b></li>`).join('')}</ul>`:''}
+      <div class="field kc"><label>Peso de tu ración (g)</label><input type="number" inputmode="decimal" value="${r.portionG}" oninput="calcPortion('${r.id}',this.value)"></div>
+      <div class="calc-out kc" id="co-${r.id}"></div>
       <div class="rec-meta">${where ? 'Se sugiere sola en: '+esc(where)+(r.auto!==false?'':' (solo cuando la eliges tú)') : 'No se sugiere sola; puedes ponerla tú en cualquier comida'}</div>
       <button class="btn primary" style="width:100%; margin:8px 0 6px;" onclick="openAddToMenu('${r.id}')">Añadir a una comida</button>
       <div class="tools" style="margin:0;"><button class="btn" onclick="openRecipeForm('${r.id}')">Editar</button><button class="btn" onclick="deleteRecipe('${r.id}')">Borrar</button></div></div>`;
@@ -2034,17 +2065,297 @@ function calcPortion(id,v){
 }
 
 /* =========================================================
+   MI SEMANA: menú estructurado y flexible (sin números)
+   ========================================================= */
+const SLOTS_W = [
+  {k:'desayuno', l:'Desayuno',  c:'var(--c-desayuno)', choice:true},
+  {k:'almuerzo', l:'Almuerzo',  c:'var(--c-almuerzo)', choice:true},
+  {k:'comida',   l:'Comida',    c:'var(--c-comida)'},
+  {k:'merienda', l:'Merienda',  c:'var(--c-merienda)', choice:true},
+  {k:'cena',     l:'Cena',      c:'var(--c-cena)'}
+];
+const DAYS_FULL = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+const DAYS_L = ['L','M','X','J','V','S','D'];
+const WORKOUTS = ['Brooklyn','Gimnasio','Otro'];
+
+function defaultWeek(){
+  return {
+    rev:1,
+    days:[
+      {comida:'Pisto con huevo y arroz', cena:'Crema con filete de pollo'},
+      {comida:'Lentejas con verdura y pollo (la ración congelada)', cena:'Sopa de fideos con patata, zanahoria, pollo y chorizo'},
+      {comida:'Cinta de lomo con pisto y patata', cena:'Crema con hamburguesa de pollo'},
+      {comida:'Solomillos de pollo a la plancha con ensalada y arroz', cena:'Sopa de fideos con tortilla de patatas'},
+      {comida:'Ensalada de pimientos asados, melva y queso de cabra, con patata cocida', cena:'Hamburguesa con pan de cristal, queso, tomate y lechuga'},
+      {comida:'Legumbre recién cocinada: lentejas o judías pintas con arroz y chorizo', cena:'Libre'},
+      {comida:'Pasta con tomate y atún o pollo', cena:'Ensalada de hojas verdes, tomate, queso de cabra y atún'}
+    ],
+    opts:{
+      desayuno:['Café con avena y canela, yogur griego, crema de cacahuete y arándanos','Tostadas con queso cottage y mermelada pura fruta de Helios'],
+      almuerzo:['Fruta con frutos secos o queso','Huevo cocido','Jamón con tomate'],
+      merienda:['Café con 4 galletas de avena','Tortitas de legumbres (Mercadona) con queso y jamón']
+    },
+    train:{0:'Brooklyn 21:00', 2:'Brooklyn 15:00 o 21:00', 5:'Brooklyn 10:00 / 11:00'},
+    prep:[
+      {day:5, text:'Cocinar la legumbre: una ración para el sábado y otra congelada para el martes de la semana siguiente.'},
+      {day:0, text:'Cocinar el pisto, las cremas (calabacín y calabaza) y la sopa de la semana.'}
+    ],
+    shop:{chk:{}, extra:[]},
+    showKcal:false
+  };
+}
+function W_(){ if(!DATA.week || !DATA.week.days) DATA.week=defaultWeek(); return DATA.week; }
+function applyKcalMode(){ document.body.classList.toggle('nokcal', !W_().showKcal); }
+
+let wkIso = todayISO();
+function wkDates(){ const s=startOfWeek(parseISO(wkIso)); return Array.from({length:7},(_,i)=>fmtISO(addDays(s,i))); }
+function dayMealsDone(iso){ const mc=(DATA.days[iso]||{}).mc||{}; return SLOTS_W.filter(s=>mc[s.k]).length; }
+function shiftWeekW(n){ wkIso=fmtISO(addDays(parseISO(wkIso),7*n)); renderWeek(); }
+function selWeekDay(iso){ wkIso=iso; renderWeek(); }
+
+function cycleMeal(k){
+  const d=ensureDay(wkIso); d.mc=d.mc||{};
+  const c=d.mc[k]||'', n = c==='' ? 'ok' : (c==='ok' ? 'alt' : '');
+  if(n) d.mc[k]=n; else delete d.mc[k];
+  saveData(); renderWeek();
+}
+function pickOpt(k,i){
+  const d=ensureDay(wkIso); d.mo=d.mo||{};
+  if(d.mo[k]===i) delete d.mo[k]; else d.mo[k]=i;
+  saveData(); renderWeek();
+}
+function toggleWorkout(w){
+  const d=ensureDay(wkIso); const l=d.wk||[];
+  const i=l.indexOf(w);
+  if(i>=0) l.splice(i,1); else l.push(w);
+  d.wk=l;
+  if(l.indexOf('Brooklyn')>=0) d.box=true; else if(d.box===true) delete d.box;
+  saveData(); renderWeek();
+}
+function setStepsW(v){
+  const d=ensureDay(wkIso);
+  d.steps = (v===''||isNaN(Number(v))) ? null : Math.max(0,Math.round(Number(v)));
+  saveData(); renderWeek();
+}
+function markCheckHtml(state){
+  const sym = state==='ok' ? '✓' : (state==='alt' ? '≈' : '');
+  return `<span class="mk ${state||'none'}">${sym}</span>`;
+}
+function renderWeek(){
+  const W=W_(), el=document.getElementById('view-week');
+  const dates=wkDates(), today=todayISO(), idx=weekdayIdx(wkIso), st=DATA.days[wkIso]||{};
+  const d0=parseISO(dates[0]), d6=parseISO(dates[6]);
+  const label = d0.getMonth()===d6.getMonth()
+    ? `${d0.getDate()} – ${d6.getDate()} ${d6.toLocaleDateString('es-ES',{month:'long'})}`
+    : `${d0.getDate()} ${d0.toLocaleDateString('es-ES',{month:'short'})} – ${d6.getDate()} ${d6.toLocaleDateString('es-ES',{month:'short'})}`;
+  const strip = dates.map((iso,i)=>{
+    const n=dayMealsDone(iso), cls = n>=5?'full':(n>0?'part':'');
+    return `<button class="dchip ${cls} ${iso===today?'today':''} ${iso===wkIso?'sel':''}" onclick="selWeekDay('${iso}')"><span>${DAYS_L[i]}</span><b>${parseISO(iso).getDate()}</b><i></i></button>`;
+  }).join('');
+
+  const dm = W.days[idx] || {};
+  const mc = st.mc||{}, mo = st.mo||{};
+  const rows = SLOTS_W.map(s=>{
+    const state = mc[s.k]||'';
+    let body;
+    if(s.choice){
+      const opts=(W.opts[s.k]||[]);
+      body = opts.length
+        ? opts.map((o,i)=>`<button class="opt ${mo[s.k]===i?'on':''}" onclick="pickOpt('${s.k}',${i})">${esc(o)}</button>`).join('')
+        : '<div class="en-empty">Sin opciones: añádelas en «Editar mi menú»</div>';
+    } else {
+      body = `<div class="mtext">${esc(dm[s.k]||'—')}</div>`;
+    }
+    return `<div class="wmeal"><div class="wm-main"><div class="meal-label"><i style="background:${s.c}"></i>${s.l}</div>${body}</div>
+      <button class="mkbtn" aria-label="Marcar ${s.l}" onclick="cycleMeal('${s.k}')">${markCheckHtml(state)}</button></div>`;
+  }).join('');
+
+  const train = (W.train||{})[idx];
+  const wk = st.wk||[];
+  const prep = (W.prep||[]).filter(p=>Number(p.day)===idx && p.text);
+  const steps = (st.steps!==undefined && st.steps!==null) ? st.steps : '';
+
+  // resumen semanal, siempre en positivo
+  let meals=0, trains=0, stepSum=0, stepDays=0;
+  dates.forEach(iso=>{ const s=DATA.days[iso]||{}; meals+=dayMealsDone(iso); if((s.wk||[]).length||s.box===true) trains++; if(s.steps>0){ stepSum+=s.steps; stepDays++; } });
+  const avg = stepDays ? Math.round(stepSum/stepDays).toLocaleString('es-ES') : '–';
+
+  el.innerHTML = `
+    <div class="week-nav"><button class="round" onclick="shiftWeekW(-1)">‹</button><div class="label">${label}</div><button class="round" onclick="shiftWeekW(1)">›</button></div>
+    <div class="daystrip">${strip}</div>
+    <div class="card" style="padding:12px 14px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px;">
+        <h2 style="margin:0;">${DAYS_FULL[idx]} ${parseISO(wkIso).getDate()}</h2>
+        ${train ? `<span class="pill box">🥊 ${esc(train)}</span>` : ''}
+      </div>
+      ${prep.map(p=>`<div class="ok-note" style="margin:8px 0;">👩‍🍳 <b>Hoy toca preparar:</b> ${esc(p.text)}</div>`).join('')}
+      ${rows}
+      <p class="hint">Toca el círculo: <b>✓</b> lo previsto · <b>≈</b> comí otra cosa (también vale) · vacío = sin marcar. Cambiar el plan un día no es fallar y no hay nada que compensar.</p>
+    </div>
+    <div class="card">
+      <h2>Movimiento</h2>
+      <div class="field"><label>Entreno de hoy</label>
+        <div class="chips">${WORKOUTS.map(w=>`<button class="pool-chip ${wk.indexOf(w)>=0?'on':''}" onclick="toggleWorkout('${w}')">${w==='Brooklyn'?'🥊 ':''}${w}</button>`).join('')}</div></div>
+      <div class="field" style="margin-bottom:0;"><label>Pasos del día</label>
+        <input type="number" inputmode="numeric" value="${steps}" placeholder="Escribe los pasos" onchange="setStepsW(this.value)"></div>
+    </div>
+    <div class="card">
+      <h2>Esta semana</h2>
+      <div class="stat-row"><span>Comidas marcadas</span><b>${meals} de 35</b></div>
+      <div class="stat-row"><span>Días con entreno</span><b>${trains}</b></div>
+      <div class="stat-row"><span>Pasos (media de los días anotados)</span><b>${avg}</b></div>
+    </div>
+    <div class="tools"><button class="btn" onclick="openWeekEditor()">✏️ Editar mi menú</button><button class="btn" onclick="switchView('shop')">🛒 Lista de la compra</button></div>`;
+}
+function refreshWeekIfActive(){
+  try{
+    const v=document.getElementById('view-week'), sh=document.getElementById('view-shop');
+    if(v && v.classList.contains('active')) renderWeek();
+    else if(sh && sh.classList.contains('active')) renderShop();
+  }catch(e){}
+}
+
+/* ---- editor del menú ---- */
+function openWeekEditor(){
+  const W=W_();
+  const names=DATA.myRecipes.map(r=>r.name);
+  const dl=`<datalist id="recnames">${names.map(n=>`<option value="${esc(n)}">`).join('')}</datalist>`;
+  const days=W.days.map((d,i)=>`
+    <div class="sw-h" style="margin-top:12px;">${DAYS_FULL[i]}</div>
+    <div class="field"><label>Comida</label><input list="recnames" value="${esc(d.comida||'')}" oninput="wkSetDay(${i},'comida',this.value)"></div>
+    <div class="field"><label>Cena</label><input list="recnames" value="${esc(d.cena||'')}" oninput="wkSetDay(${i},'cena',this.value)"></div>
+    <div class="field"><label>Entreno (déjalo vacío si no hay)</label><input value="${esc((W.train||{})[i]||'')}" oninput="wkSetTrain(${i},this.value)"></div>`).join('');
+  const optBox=(k,l)=>`<div class="field"><label>${l} (una opción por línea)</label><textarea rows="4" class="ta" oninput="wkSetOpts('${k}',this.value)">${esc((W.opts[k]||[]).join('\n'))}</textarea></div>`;
+  const prep=(W.prep||[]).map((p,i)=>`
+    <div class="field"><label>Preparación ${i+1}</label>
+      <select onchange="wkSetPrep(${i},'day',this.value)">${DAYS_FULL.map((n,j)=>`<option value="${j}" ${Number(p.day)===j?'selected':''}>${n}</option>`).join('')}</select>
+      <textarea rows="2" class="ta" oninput="wkSetPrep(${i},'text',this.value)">${esc(p.text||'')}</textarea></div>`).join('');
+  document.getElementById('sheet').innerHTML = `<div class="sheet-head"><h3>Editar mi menú</h3><button onclick="closeSheet()">✕</button></div>
+    <p class="hint" style="margin:0 0 4px;">Se guarda solo al escribir. Es una estructura, no una norma: cámbiala cuando quieras.</p>
+    ${dl}${days}
+    <div class="sw-h" style="margin-top:18px;">Opciones a elegir</div>
+    ${optBox('desayuno','Desayuno')}${optBox('almuerzo','Almuerzo')}${optBox('merienda','Merienda')}
+    <div class="sw-h" style="margin-top:18px;">Preparación</div>${prep}
+    <button class="btn" style="width:100%; margin-top:14px;" onclick="wkReset()">Volver al menú inicial</button>
+    <button class="btn primary" style="width:100%; margin-top:8px;" onclick="closeSheet()">Listo</button>`;
+  openOverlay();
+}
+function wkSetDay(i,k,v){ W_().days[i][k]=v; saveData(); }
+function wkSetTrain(i,v){ const t=W_().train=W_().train||{}; if(v.trim()) t[i]=v; else delete t[i]; saveData(); }
+function wkSetOpts(k,v){ W_().opts[k]=v.split('\n').map(x=>x.trim()).filter(Boolean); saveData(); }
+function wkSetPrep(i,k,v){ W_().prep[i][k]=v; saveData(); }
+function wkReset(){
+  if(!confirm('¿Volver al menú inicial? Se pierden los cambios que hayas hecho en el menú (tus marcas y pasos se quedan).')) return;
+  const keep=W_(); const w=defaultWeek(); w.shop=keep.shop; w.showKcal=keep.showKcal;
+  DATA.week=w; saveData(); closeSheet(); toast('Menú inicial restaurado');
+}
+
+/* ---- lista de la compra, a partir del menú ---- */
+const SHOP = [
+  ['Fruta y verdura','Fruta de temporada',/fruta/],
+  ['Fruta y verdura','Arándanos',/arandanos/],
+  ['Fruta y verdura','Calabacín',/pisto|crema|calabacin/],
+  ['Fruta y verdura','Calabaza',/crema|calabaza/],
+  ['Fruta y verdura','Cebolla',/pisto|lentej|judias pintas|legumbre|sopa/],
+  ['Fruta y verdura','Pimiento verde',/pisto/],
+  ['Fruta y verdura','Pimientos asados',/pimientos asados/],
+  ['Fruta y verdura','Zanahoria',/lentej|sopa|legumbre/],
+  ['Fruta y verdura','Patatas',/patata|tortilla/],
+  ['Fruta y verdura','Tomates',/tomate|hamburguesa|ensalada/],
+  ['Fruta y verdura','Lechuga / hojas verdes',/lechuga|hojas verdes|ensalada/],
+  ['Carne, pescado y huevos','Pollo (filetes, solomillos y trozos)',/pollo/],
+  ['Carne, pescado y huevos','Hamburguesas de pollo',/hamburguesa de pollo/],
+  ['Carne, pescado y huevos','Hamburguesas para la cena',/hamburguesa con pan/],
+  ['Carne, pescado y huevos','Cinta de lomo',/lomo/],
+  ['Carne, pescado y huevos','Huevos',/huevo|tortilla/],
+  ['Carne, pescado y huevos','Jamón',/jamon/],
+  ['Carne, pescado y huevos','Chorizo',/chorizo|judias pintas|legumbre/],
+  ['Carne, pescado y huevos','Atún en lata',/atun/],
+  ['Carne, pescado y huevos','Melva en conserva',/melva/],
+  ['Lácteos y quesos','Yogur griego',/yogur/],
+  ['Lácteos y quesos','Queso de cabra',/queso de cabra/],
+  ['Lácteos y quesos','Queso cottage',/cottage/],
+  ['Lácteos y quesos','Queso (lonchas o fresco)',/queso/],
+  ['Despensa','Arroz',/arroz/],
+  ['Despensa','Lentejas',/lentej|legumbre/],
+  ['Despensa','Judías pintas',/judias pintas|legumbre/],
+  ['Despensa','Fideos',/fideos/],
+  ['Despensa','Pasta',/pasta/],
+  ['Despensa','Tomate triturado',/pisto|lentej|judias pintas|legumbre|pasta/],
+  ['Despensa','Pan de cristal',/pan de cristal/],
+  ['Despensa','Pan para tostadas',/tostadas/],
+  ['Despensa','Avena en copos',/avena y canela|con avena/],
+  ['Despensa','Canela',/canela/],
+  ['Despensa','Galletas de avena',/galletas/],
+  ['Despensa','Tortitas de legumbres (Mercadona)',/tortitas/],
+  ['Despensa','Crema de cacahuete',/cacahuete/],
+  ['Despensa','Mermelada pura fruta (Helios)',/mermelada/],
+  ['Despensa','Frutos secos',/frutos secos/],
+  ['Despensa','Café',/cafe/],
+  ['Despensa','Aceite de oliva virgen extra',/./]
+];
+let SHOP_CUR = [];
+function shopItems(){
+  const W=W_();
+  const txt = norm([].concat(W.days.map(d=>(d.comida||'')+' '+(d.cena||'')), Object.keys(W.opts).map(k=>W.opts[k].join(' ')), (W.prep||[]).map(p=>p.text||'')).join(' '));
+  const list = SHOP.filter(it=>it[2].test(txt)).map(it=>({cat:it[0], name:it[1]}));
+  (W.shop.extra||[]).forEach(n=>list.push({cat:'Añadido por mí', name:n, extra:true}));
+  return list;
+}
+function shopTog(i){ const it=SHOP_CUR[i], c=W_().shop.chk; if(c[it.name]) delete c[it.name]; else c[it.name]=true; saveData(); renderShop(); }
+function shopAdd(){
+  const inp=document.getElementById('shopNew'); const v=(inp.value||'').trim();
+  if(!v) return;
+  const e=W_().shop.extra; if(e.indexOf(v)<0) e.push(v);
+  saveData(); renderShop();
+}
+function shopDel(i){ const it=SHOP_CUR[i]; const s=W_().shop; s.extra=s.extra.filter(x=>x!==it.name); delete s.chk[it.name]; saveData(); renderShop(); }
+function shopClear(){ W_().shop.chk={}; saveData(); renderShop(); }
+function renderShop(){
+  const el=document.getElementById('view-shop'), chk=W_().shop.chk;
+  SHOP_CUR = shopItems();
+  const cats=[]; SHOP_CUR.forEach(it=>{ if(cats.indexOf(it.cat)<0) cats.push(it.cat); });
+  const done = SHOP_CUR.filter(it=>chk[it.name]).length;
+  el.innerHTML = `
+    <p class="week-sub" style="margin-bottom:10px;">${done} de ${SHOP_CUR.length} en el carro · se genera a partir de tu menú</p>
+    ${cats.map(c=>`<div class="card"><h2>${c}</h2>${SHOP_CUR.map((it,i)=>it.cat!==c?'':`<div class="shop-row ${chk[it.name]?'got':''}"><button class="shop-main" onclick="shopTog(${i})"><span class="sbox">${chk[it.name]?'✓':''}</span>${esc(it.name)}</button>${it.extra?`<button class="shop-x" onclick="shopDel(${i})">✕</button>`:''}</div>`).join('')}</div>`).join('')}
+    <div class="card"><h2>Añadir algo más</h2>
+      <div style="display:flex; gap:8px;"><input id="shopNew" class="ta" style="flex:1; padding:10px 12px;" placeholder="Ej.: papel de cocina" onkeydown="if(event.key==='Enter')shopAdd()"><button class="btn" style="flex:0 0 auto; padding:10px 16px;" onclick="shopAdd()">Añadir</button></div></div>
+    <button class="btn" style="width:100%;" onclick="shopClear()">Empezar lista nueva (quitar marcas)</button>
+    <p class="hint" style="text-align:center;">La lista cambia sola si editas el menú. No lleva cantidades: mira lo que ya tienes en casa.</p>`;
+}
+
+/* ---- Más ---- */
+function toggleKcal(){ const W=W_(); W.showKcal=!W.showKcal; saveData(); applyKcalMode(); renderMore(); }
+function renderMore(){
+  const W=W_();
+  document.getElementById('view-more').innerHTML = `
+    <div class="card"><h2>Calendario</h2><p class="hint" style="margin:0 0 10px;">Los días con las 5 comidas marcadas salen en verde.</p>
+      <button class="btn" style="width:100%;" onclick="switchView('month')">🗓️ Abrir calendario</button></div>
+    <div class="card"><h2>Calorías y macros</h2>
+      <p class="hint" style="margin:0 0 10px;">Ocultos por defecto: tu menú funciona sin números. Si algún día quieres verlos (en las recetas, el diario y el objetivo), actívalos aquí.</p>
+      <button class="btn ${W.showKcal?'primary':''}" style="width:100%;" onclick="toggleKcal()">${W.showKcal?'Mostrando números · tocar para ocultar':'Mostrar calorías y macros'}</button>
+      ${W.showKcal?`<div class="tools" style="margin:10px 0 0;"><button class="btn" onclick="switchView('menu')">🍽️ Diario</button><button class="btn" onclick="switchView('profile')">🎯 Objetivo</button></div>`:''}</div>`;
+}
+
+/* =========================================================
    NAVEGACIÓN
    ========================================================= */
 function switchView(name){
-  ['menu','recipes','profile','month','progress'].forEach(v=>{
+  ['week','shop','more','menu','recipes','profile','month','progress'].forEach(v=>{
     document.getElementById('view-'+v).classList.toggle('active', v===name);
-    document.getElementById('nav-'+v).classList.toggle('active', v===name);
+    const nb=document.getElementById('nav-'+v);
+    if(nb) nb.classList.toggle('active', v===name || (v==='month' && name==='more') || ((v==='menu'||v==='profile') && false));
   });
-  const t={menu:'Diario de comidas', recipes:'Mis recetas', profile:'Tu objetivo', month:'Calendario', progress:'Tu progreso'};
-  const s={menu:'Apunta lo que comes y pide ideas', recipes:'Calcula las kcal de tu ración', profile:'Calorías y macros según tus datos', month:'Verde = día cumplido · toca un día para registrarlo', progress:'Peso y cintura'};
+  const navMore=document.getElementById('nav-more');
+  if(navMore) navMore.classList.toggle('active', ['more','menu','profile','month'].indexOf(name)>=0);
+  const t={week:'Mi semana', shop:'Lista de la compra', more:'Más', menu:'Diario de comidas', recipes:'Mis recetas', profile:'Tu objetivo', month:'Calendario', progress:'Tu progreso'};
+  const s={week:'Estructura flexible: lo que toca, sin presión', shop:'Generada a partir de tu menú', more:'Calendario y ajustes', menu:'Apunta lo que comes y pide ideas', recipes:'Tus platos de siempre', profile:'Calorías y macros según tus datos', month:'Verde = día con las 5 comidas marcadas · toca un día para ver o cambiar', progress:'Peso y cintura'};
   document.getElementById('headerTitle').textContent=t[name];
   document.getElementById('headerSub').textContent=s[name];
+  if(name==='week') renderWeek();
+  if(name==='shop') renderShop();
+  if(name==='more') renderMore();
   if(name==='menu') renderMenu();
   if(name==='profile') renderProfile();
   if(name==='month') renderMonth();
@@ -2064,7 +2375,8 @@ function switchView(name){
     history.replaceState(null,'',location.pathname);
     setTimeout(()=>toast('Pasos de hoy: '+Math.round(Number(ps)).toLocaleString('es-ES')),300);
   }
-  switchView(profileOk() ? 'menu' : 'profile');
+  applyKcalMode();
+  switchView('week');
 })();
 
 if('serviceWorker' in navigator){
